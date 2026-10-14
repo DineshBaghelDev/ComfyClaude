@@ -1,0 +1,45 @@
+{
+  "name": "comfyclaude",
+  "displayName": "ComfyClaude",
+  "version": "1.0.0",
+  "description": "Local image generation for Claude through your own ComfyUI + Z-Image Turbo: text-to-image, reference images, ControlNet, inpaint, outpaint, upscale, background removal. Free, private, runs on 6 GB GPUs.",
+  "author": {
+    "name": "Dinesh Baghel",
+    "url": "https://github.com/DineshBaghelDev"
+  },
+  "homepage": "https://github.com/DineshBaghelDev/ComfyClaude",
+  "repository": "https://github.com/DineshBaghelDev/ComfyClaude",
+  "license": "MIT",
+  "keywords": ["image-generation", "comfyui", "z-image", "stable-diffusion", "mcp", "local-ai"],
+  "mcpServers": {
+    "comfyclaude": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "server.py"],
+      "env": {
+        "COMFYUI_URL": "${user_config.comfyui_url}",
+        "COMFYUI_PATH": "${user_config.comfyui_path}",
+        "COMFYCLAUDE_OUTPUT_DIR": "${user_config.output_dir}"
+      }
+    }
+  },
+  "userConfig": {
+    "comfyui_url": {
+      "type": "string",
+      "title": "ComfyUI URL",
+      "description": "Address of your ComfyUI server (ComfyUI Desktop often uses port 8000, portable/manual installs 8188).",
+      "default": "http://127.0.0.1:8188"
+    },
+    "comfyui_path": {
+      "type": "string",
+      "title": "ComfyUI folder (optional)",
+      "description": "Folder containing ComfyUI's main.py. When set, ComfyClaude starts ComfyUI automatically in the background when needed.",
+      "default": ""
+    },
+    "output_dir": {
+      "type": "string",
+      "title": "Output folder (optional)",
+      "description": "Where generated images are saved. Default: ~/ComfyClaude/outputs",
+      "default": ""
+    }
+  }
+}

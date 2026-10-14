@@ -10,9 +10,10 @@ from pathlib import Path
 
 class ComfyClient:
     def __init__(self, urls):
-        self.urls = urls
+        self.urls = [urls] if isinstance(urls, str) else list(urls)
         self.base = None
         self.client_id = str(uuid.uuid4())
+        self._object_info = None
 
     # ---- connection -------------------------------------------------------
     def connect(self):
@@ -27,7 +28,7 @@ class ComfyClient:
             except Exception:
                 continue
         raise ConnectionError(
-            f"ComfyUI is not reachable at {self.urls}. Start ComfyUI Desktop first."
+            f"ComfyUI is not reachable at {self.urls}. Start ComfyUI, or set comfy_path so it can be auto-started."
         )
 
     def _get(self, path):
@@ -48,6 +49,24 @@ class ComfyClient:
             raise RuntimeError(f"ComfyUI rejected request: {e.read().decode(errors='replace')}")
 
     # ---- API --------------------------------------------------------------
+    def object_info(self, refresh=False):
+        """Node definitions, including the model files each loader can see."""
+        if self._object_info is None or refresh:
+            self._object_info = json.loads(self._get("/object_info"))
+        return self._object_info
+
+    def options(self, node, field):
+        """Choices of a combo input (e.g. model files for a loader). None if the node is missing."""
+        info = self.object_info().get(node)
+        if info is None:
+            return None
+        spec = {**info["input"].get("required", {}), **info["input"].get("optional", {})}.get(field)
+        if not spec:
+            return []
+        if isinstance(spec[0], list):          # old style: [[choices], {...}]
+            return spec[0]
+        return spec[1].get("options", []) if len(spec) > 1 else []  # new style: ["COMBO", {"options": [...]}]
+
     def system_stats(self):
         return json.loads(self._get("/system_stats"))
 

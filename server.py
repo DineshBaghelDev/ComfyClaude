@@ -2,108 +2,123 @@
 import json
 import random
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 import imaging
+import settings
 import workflows
 from comfy_client import ComfyClient
 
 ROOT = Path(__file__).parent
-CFG = json.loads((ROOT / "config.json").read_text())
-CAPS = json.loads((ROOT / "capabilities.json").read_text())
-PRESETS = json.loads((ROOT / "presets.json").read_text())
-CFG["models"] = CAPS["models"]
+CFG, CAPS, PRESETS = settings.load()
 OUT = Path(CFG["output_dir"])
 WORK = OUT / "_work"
 JOBS_FILE = OUT / "jobs.json"
-CUSTOM_DIR = ROOT / "workflows_custom"
+CUSTOM_DIRS = [ROOT / "workflows_custom", settings.USER_DIR / "workflows"]
 
-INSTRUCTIONS = """Local image generation (ComfyUI + Z-Image Turbo on a 6 GB GPU; jobs take ~30-150 s).
-- Call list_capabilities once per session to see ready tools, default qualities and measured times.
-- Quality: balanced (Q8, default) for normal use, fast (6 steps) for drafts/throwaway, max (bf16) only
-  when the user asks for the best quality. Avoid switching tiers back and forth (each switch reloads models).
+INSTRUCTIONS = """Local image generation through the user's own ComfyUI with Z-Image Turbo (jobs take ~10 s to a few minutes
+depending on their GPU).
+- Call list_capabilities once per session to see ready tools, default qualities and measured times on this PC.
+- Quality: balanced (default) for normal use, fast for drafts/throwaway, max only when the user asks for the
+  best quality. Avoid switching tiers back and forth (each switch reloads models).
 - Use generate_drafts when the direction is unclear, then generate_image with the chosen seed.
 - Prompts: detailed natural language; text to render goes in quotes; no negative prompts; ~1 MP sizes.
 - ALWAYS open each result with Read and check it against the request (subject, counts, text spelling,
   hands/faces). Fix problems (new seed, better prompt, or inpaint the broken area) before presenting.
-- If a tool returns a job id, call job_status until done. Report file paths and seeds to the user."""
+- If a tool returns a job id, call job_status until done. Report file paths and seeds to the user.
+- If ComfyUI or models are missing, tell the user to run the setup (see the comfyclaude setup skill)."""
 
 mcp = FastMCP("comfyclaude", instructions=INSTRUCTIONS)
-comfy = ComfyClient(CFG["comfy_urls"])
+comfy = ComfyClient(CFG["comfy_url"])
 
 
 # ---- ComfyUI process --------------------------------------------------------
-def _popen_comfy(root, shared, log, flags):
-    # Same flags as start_comfy.ps1. stdin/stdout must not inherit the MCP stdio channel.
-    subprocess.Popen(
-        [str(root / ".venv" / "Scripts" / "python.exe"), "main.py", "--port", "8188", "--enable-manager",
-         "--extra-model-paths-config", str(ROOT / "comfy_paths.yaml"),
-         "--input-directory", str(shared / "input"), "--output-directory", str(shared / "output"),
-         *CFG.get("comfy_args", [])],
-        cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
-    )
+def _start_comfy(log):
+    """Launch ComfyUI headless. Detached so it survives MCP server restarts."""
+    path = Path(CFG["comfy_path"])
+    port = CFG["comfy_url"].rsplit(":", 1)[-1].split("/")[0]
+    cmd = [settings.find_comfy_python(path, CFG.get("comfy_python", "")), "main.py",
+           "--port", port if port.isdigit() else "8188", *CFG.get("comfy_args", [])]
+    # stdin/stdout must not inherit the MCP stdio channel.
+    kw = dict(cwd=path, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        for extra in (subprocess.CREATE_BREAKAWAY_FROM_JOB, 0):  # breakaway may be refused
+            try:
+                return subprocess.Popen(cmd, creationflags=flags | extra, **kw)
+            except OSError:
+                continue
+    return subprocess.Popen(cmd, start_new_session=True, **kw)
 
 
-def ensure_comfy(timeout=150):
-    """Connect to ComfyUI, starting it headless (start_comfy.ps1) if it isn't running."""
+def ensure_comfy():
+    """Connect to ComfyUI, starting it headless if it isn't running and comfy_path is set."""
     try:
         return comfy.connect()
     except ConnectionError:
-        pass
+        if not CFG["comfy_path"]:
+            raise ConnectionError(
+                f"ComfyUI is not running at {CFG['comfy_url']}. Start ComfyUI, or set comfy_path "
+                f"(plugin setting or {settings.user_config_path()}) so it can be started automatically.")
+        if not (Path(CFG["comfy_path"]) / "main.py").exists():
+            raise ConnectionError(f"comfy_path '{CFG['comfy_path']}' has no main.py (point it at the ComfyUI folder).")
     OUT.mkdir(parents=True, exist_ok=True)
-    log = open(OUT / "comfy_server.log", "ab")
-    root = Path(CFG["comfy_root"])
-    shared = Path(CFG["models_dir"]).parent
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-    # Break away from the parent's job object so ComfyUI survives MCP server restarts.
-    for extra in (subprocess.CREATE_BREAKAWAY_FROM_JOB, 0):
-        try:
-            _popen_comfy(root, shared, log, flags | extra)
-            break
-        except OSError:
-            continue
-    end = time.time() + timeout
+    log_path = OUT / "comfy_server.log"
+    _start_comfy(open(log_path, "ab"))
+    end = time.time() + CFG["start_timeout"]
     while time.time() < end:
         time.sleep(3)
         try:
             return comfy.connect()
         except ConnectionError:
             continue
-    raise ConnectionError(f"Started ComfyUI but it did not come up in {timeout}s. See {OUT / 'comfy_server.log'}")
+    raise ConnectionError(f"Started ComfyUI but it did not come up in {CFG['start_timeout']}s. See {log_path}")
 
 
 # ---- models / quality --------------------------------------------------------
-def _exists(folder, name):
-    md = Path(CFG["models_dir"])
-    folders = {"unet": ("unet", "diffusion_models"), "diffusion_models": ("diffusion_models", "unet"),
-               "text_encoders": ("text_encoders", "clip")}.get(folder, (folder,))
-    return any((md / f / name).exists() for f in folders)
+def _has(node, field, name):
+    opts = comfy.options(node, field)
+    return opts is not None and name in opts
 
 
-def _quality_present(q):
-    return _exists("unet" if q["loader"] == "gguf" else "diffusion_models", q["unet"]) and _exists("text_encoders", q["clip"])
+def _quality_problem(q):
+    """None if the tier can run, else a short reason."""
+    if q["loader"] == "gguf":
+        if comfy.options("UnetLoaderGGUF", "unet_name") is None:
+            return "ComfyUI-GGUF custom node not installed"
+        unet, clip = ("UnetLoaderGGUF", "unet_name"), ("CLIPLoaderGGUF", "clip_name")
+    else:
+        unet, clip = ("UNETLoader", "unet_name"), ("CLIPLoader", "clip_name")
+    missing = [f for (n, k), f in ((unet, q["unet"]), (clip, q["clip"])) if not _has(n, k, f)]
+    if not _has("VAELoader", "vae_name", CFG["vae"]):
+        missing.append(CFG["vae"])
+    return f"missing model files: {missing}" if missing else None
 
 
 def _need(*keys):
-    missing = [CAPS["models"][k] for k in keys if not _exists(CAPS["model_folders"][k], CAPS["models"][k])]
+    ensure_comfy()
+    missing = [CFG["models"][k] for k in keys if not _has(*CAPS["model_nodes"][k], CFG["models"][k])]
     if missing:
-        raise FileNotFoundError(f"Missing model files: {missing}. Run: python setup_models.py --extras-only")
+        raise FileNotFoundError(f"Missing model files: {missing}. Run the setup: python setup_models.py --extras")
 
 
 def _pick_quality(name, tool):
     """Resolve a quality tier; falls back to another installed tier if files are missing."""
+    ensure_comfy()
     name = name or CAPS["tools"].get(tool, {}).get("quality") or CFG["default_quality"]
     if name not in CFG["qualities"]:
         raise ValueError(f"Unknown quality '{name}'. Options: {list(CFG['qualities'])}")
-    if _quality_present(CFG["qualities"][name]):
+    if not _quality_problem(CFG["qualities"][name]):
         return name, CFG["qualities"][name], ""
-    for alt in ("balanced", "fast", "max"):
-        if alt != name and _quality_present(CFG["qualities"][alt]):
-            return alt, CFG["qualities"][alt], f"(note: '{name}' models not installed, used '{alt}')\n"
-    raise FileNotFoundError(f"No Z-Image model files found in {CFG['models_dir']}")
+    for alt in CFG["qualities"]:
+        if alt != name and not _quality_problem(CFG["qualities"][alt]):
+            return alt, CFG["qualities"][alt], f"(note: quality '{name}' unavailable, used '{alt}')\n"
+    raise FileNotFoundError(f"No usable Z-Image models: {_quality_problem(CFG['qualities'][name])}. "
+                            "Run the setup: python setup_models.py")
 
 
 def _seed(seed):
@@ -367,13 +382,14 @@ def remove_background(image_path: str) -> str:
 
 @mcp.tool()
 def run_custom_workflow(name: str, params: dict | None = None) -> str:
-    """Run a user workflow from workflows_custom/<name>.json (ComfyUI "Export (API)" format).
-    Values written as "{{key}}" in that JSON are replaced from params. Params whose key starts
-    with "image" and point to an existing local file are uploaded first.
+    """Run a custom workflow (ComfyUI "Export (API)" format) from ~/.comfyclaude/workflows/<name>.json
+    or the bundled workflows_custom/ folder. Values written as "{{key}}" in that JSON are replaced
+    from params. Params whose key starts with "image" and point to an existing local file are uploaded first.
     """
-    path = CUSTOM_DIR / f"{name}.json"
-    if not path.exists():
-        raise FileNotFoundError(f"No custom workflow '{name}'. Available: {[p.stem for p in CUSTOM_DIR.glob('*.json')]}")
+    found = _custom_workflows()
+    if name not in found:
+        raise FileNotFoundError(f"No custom workflow '{name}'. Available: {sorted(found)}")
+    path = found[name]
     params = dict(params or {})
     ensure_comfy()
     for k, v in params.items():
@@ -382,6 +398,13 @@ def run_custom_workflow(name: str, params: dict | None = None) -> str:
     params.setdefault("seed", _seed(-1))
     wf = workflows.fill_template(json.loads(path.read_text()), params)
     return _run(wf, {"tool": "run_custom_workflow", "workflow": name, "params": params})
+
+
+def _custom_workflows():
+    found = {}
+    for d in CUSTOM_DIRS:  # user folder last, so it overrides bundled examples
+        found.update({p.stem: p for p in d.glob("*.json")} if d.exists() else {})
+    return found
 
 
 # ---- utility tools ---------------------------------------------------------------
@@ -398,25 +421,31 @@ def list_capabilities() -> str:
     """Show every tool with what it's good for, whether its models are installed, typical
     run times measured on this PC per quality tier, style presets, and custom workflows.
     Use this to choose the right tool and quality for a task."""
+    try:
+        ensure_comfy()
+        comfy.object_info(refresh=True)  # pick up newly added model files
+    except ConnectionError as e:
+        return f"ComfyUI unavailable: {e}"
     timings = {}
     for m in _load_jobs().values():
         if m.get("seconds"):
             timings.setdefault((m.get("tool"), m.get("quality")), []).append(m["seconds"])
     lines = ["QUALITY TIERS"]
     for name, q in CFG["qualities"].items():
-        ok = "installed" if _quality_present(q) else "NOT INSTALLED"
-        lines.append(f"  {name}: {q['description']} [{ok}]")
+        problem = _quality_problem(q)
+        lines.append(f"  {name}: {q['description']} [{'ready' if not problem else problem}]")
     lines.append("\nTOOLS")
     for tool, info in CAPS["tools"].items():
-        missing = [k for k in info["needs"] if not _exists(CAPS["model_folders"][k], CAPS["models"][k])]
+        missing = [CFG["models"][k] for k in info["needs"] if not _has(*CAPS["model_nodes"][k], CFG["models"][k])]
         state = "ready" if not missing else f"missing models: {missing}"
         times = ", ".join(f"{q or '-'} ~{sum(v) / len(v):.0f}s (n={len(v)})"
                           for (t, q), v in timings.items() if t == tool)
         lines.append(f"  {tool} [{state}] default quality={info['quality']}: {info['good_for']}"
                      + (f"\n      measured: {times}" if times else ""))
     lines.append("\nSTYLE PRESETS: " + ", ".join(PRESETS))
-    customs = [p.stem for p in CUSTOM_DIR.glob("*.json")]
+    customs = sorted(_custom_workflows())
     lines.append("CUSTOM WORKFLOWS: " + (", ".join(customs) if customs else "(none)"))
+    lines.append(f"\nOutputs: {OUT}   User config: {settings.user_config_path()}")
     return "\n".join(lines)
 
 
