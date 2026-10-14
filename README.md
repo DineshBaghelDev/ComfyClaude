@@ -368,3 +368,5 @@ ComfyClaude's code is [MIT](LICENSE). Models are downloaded from their authors a
 Thanks to the ComfyUI, ComfyUI-GGUF, Tongyi-MAI and Alibaba PAI teams.
 
 Optional NoobAI/SDXL setup and comic extension guidance: [docs/noobai.md](docs/noobai.md).
+
+Comic panels: invoke `/comfyclaude:comic-panels` for three bundled templates and NoobAI custom workflows. No separate comic extension is required.

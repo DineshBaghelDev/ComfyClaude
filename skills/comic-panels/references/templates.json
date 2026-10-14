@@ -1,0 +1,29 @@
+{
+  "character_portrait": {
+    "width": 832,
+    "height": 1216,
+    "prompt_template": "1boy, adult man, solo, {character}, {expression}, (portrait:1.25), (upper body:1.2), looking at viewer, face focus, centered composition, {scene}, detailed eyes, detailed hair, clean delicate lineart, anime illustration, soft daylight, warm highlights, cool shadows, rich colors, subtle gradients",
+    "negative_prompt": "nsfw, worst quality, low quality, lowres, bad anatomy, deformed, bad hands, extra fingers, extra limbs, disfigured face, asymmetrical eyes, blurry, full body, distant figure, small subject, silhouette, dark face, underexposed, text, speech bubble, watermark, logo, forehead jewel, forehead mark, jewelry, hair ornament",
+    "model": "noobai_vpred",
+    "steps": 30,
+    "seed": 42
+  },
+  "dialogue_closeup": {
+    "width": 1216,
+    "height": 832,
+    "prompt_template": "1boy, adult man, solo, {character}, {expression}, (portrait:1.25), (upper body:1.2), looking at viewer, face focus, three-quarter view, character on right side, {scene}, pale softly blurred background, detailed eyes, detailed hair, clean delicate lineart, anime illustration, soft daylight, warm highlights, cool shadows, rich colors, subtle gradients",
+    "negative_prompt": "nsfw, worst quality, low quality, lowres, bad anatomy, deformed, bad hands, extra fingers, extra limbs, disfigured face, asymmetrical eyes, blurry, full body, distant figure, small subject, silhouette, dark face, underexposed, text, speech bubble, watermark, logo, forehead jewel, forehead mark, jewelry, hair ornament, black background, red lighting",
+    "model": "noobai_vpred",
+    "steps": 30,
+    "seed": 42
+  },
+  "establishing_scene": {
+    "width": 1216,
+    "height": 832,
+    "prompt_template": "scenery, no humans, {scene}, wide shot, eye level, strong perspective, detailed environment, anime background art, architectural illustration, clean lineart, warm sunlight, luminous sky, rich colors, soft atmospheric perspective, readable shapes",
+    "negative_prompt": "nsfw, worst quality, low quality, lowres, blurry, warped architecture, fisheye, people, crowd, underexposed, text, speech bubble, watermark, logo",
+    "model": "noobai_vpred",
+    "steps": 30,
+    "seed": 42
+  }
+}

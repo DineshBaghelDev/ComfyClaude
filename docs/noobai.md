@@ -59,7 +59,18 @@ Then pass `model="my_sdxl"`. Follow that version's settings; epsilon and V-pred 
 interchangeable. A missing selected checkpoint returns an error rather than falling back to another
 model. The default Z-Image tools and quality tiers are unchanged.
 
-Keep personal comic settings in a separate project skill/plugin that calls ComfyClaude's MCP;
-it does not need its own MCP server or a fork of ComfyClaude. An installed personal example lives
-outside this repository at `E:/Tools/ComfyClaude-Comic` (Claude plugin) and
-`~/.codex/skills/comic-noobai/SKILL.md` (Codex skill) on the development machine.
+Use `/comfyclaude:comic-panels` for the bundled comic skill. Its reference templates and the
+`noobai_character_portrait`, `noobai_dialogue_closeup`, `noobai_establishing_scene` custom workflows
+ship with this plugin. No separate extension is required. Personal character sheets, recurring
+prompts and panel manifests stay in the user's comic project. A personal `comic-noobai` skill can
+also be installed in Claude/Codex; it uses its own relative template references.
+
+Example custom workflow:
+
+```python
+run_custom_workflow(name="noobai_character_portrait", params={"character": "adult man, short black hair, blue collared shirt", "expression": "calm", "scene": "sunlit town square", "seed": 42})
+```
+
+Bundled workflow filenames/settings are examples for V-pred 1.0. User JSON in
+`~/.comfyclaude/workflows` overrides bundled workflows with the same name. Use
+`generate_with_model` for configured model selection and LoRA chains.

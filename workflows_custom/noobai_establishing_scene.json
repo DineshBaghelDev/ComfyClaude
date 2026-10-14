@@ -1,0 +1,107 @@
+{
+  "checkpoint": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "NoobAI-XL-Vpred-v1.0.safetensors"
+    }
+  },
+  "prediction": {
+    "class_type": "ModelSamplingDiscrete",
+    "inputs": {
+      "model": [
+        "checkpoint",
+        0
+      ],
+      "sampling": "v_prediction",
+      "zsnr": true
+    }
+  },
+  "rescale": {
+    "class_type": "RescaleCFG",
+    "inputs": {
+      "model": [
+        "prediction",
+        0
+      ],
+      "multiplier": 0.2
+    }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "masterpiece, best quality, newest, highres, safe, scenery, no humans, {{scene}}, wide shot, eye level, strong perspective, detailed environment, anime background art, architectural illustration, clean lineart, warm sunlight, luminous sky, rich colors, soft atmospheric perspective, readable shapes"
+    }
+  },
+  "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "nsfw, worst quality, low quality, lowres, blurry, warped architecture, fisheye, people, crowd, underexposed, text, speech bubble, watermark, logo"
+    }
+  },
+  "sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "rescale",
+        0
+      ],
+      "positive": [
+        "pos",
+        0
+      ],
+      "negative": [
+        "neg",
+        0
+      ],
+      "latent_image": [
+        "latent",
+        0
+      ],
+      "seed": "{{seed}}",
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "sampler",
+        0
+      ],
+      "vae": [
+        "checkpoint",
+        2
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "decode",
+        0
+      ],
+      "filename_prefix": "claude/checkpoint"
+    }
+  },
+  "latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1216,
+      "height": 832,
+      "batch_size": 1
+    }
+  }
+}

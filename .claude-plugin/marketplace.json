@@ -1,6 +1,6 @@
 {
   "name": "comfyclaude",
-  "description": "ComfyClaude: local image generation, content-aware fill and precise recolouring for Claude",
+  "description": "ComfyClaude: local Z-Image/SDXL generation, comic templates and precise editing",
   "owner": {
     "name": "Dinesh Baghel",
     "url": "https://github.com/DineshBaghelDev"
@@ -9,7 +9,7 @@
     {
       "name": "comfyclaude",
       "source": "./",
-      "description": "Local generation, reference images, ControlNet, content-aware inpaint/outpaint, precise recolouring, upscale and background removal."
+      "description": "Local generation with optional SDXL/NoobAI profiles, comic skills/templates, content-aware fill and precise recolouring."
     }
   ]
 }

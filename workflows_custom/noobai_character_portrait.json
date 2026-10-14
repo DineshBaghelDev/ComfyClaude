@@ -1,0 +1,107 @@
+{
+  "checkpoint": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "NoobAI-XL-Vpred-v1.0.safetensors"
+    }
+  },
+  "prediction": {
+    "class_type": "ModelSamplingDiscrete",
+    "inputs": {
+      "model": [
+        "checkpoint",
+        0
+      ],
+      "sampling": "v_prediction",
+      "zsnr": true
+    }
+  },
+  "rescale": {
+    "class_type": "RescaleCFG",
+    "inputs": {
+      "model": [
+        "prediction",
+        0
+      ],
+      "multiplier": 0.2
+    }
+  },
+  "pos": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "masterpiece, best quality, newest, highres, safe, 1boy, adult man, solo, {{character}}, {{expression}}, (portrait:1.25), (upper body:1.2), looking at viewer, face focus, centered composition, {{scene}}, detailed eyes, detailed hair, clean delicate lineart, anime illustration, soft daylight, warm highlights, cool shadows, rich colors, subtle gradients"
+    }
+  },
+  "neg": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "text": "nsfw, worst quality, low quality, lowres, bad anatomy, deformed, bad hands, extra fingers, extra limbs, disfigured face, asymmetrical eyes, blurry, full body, distant figure, small subject, silhouette, dark face, underexposed, text, speech bubble, watermark, logo, forehead jewel, forehead mark, jewelry, hair ornament"
+    }
+  },
+  "sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "rescale",
+        0
+      ],
+      "positive": [
+        "pos",
+        0
+      ],
+      "negative": [
+        "neg",
+        0
+      ],
+      "latent_image": [
+        "latent",
+        0
+      ],
+      "seed": "{{seed}}",
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "sampler",
+        0
+      ],
+      "vae": [
+        "checkpoint",
+        2
+      ]
+    }
+  },
+  "save": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "decode",
+        0
+      ],
+      "filename_prefix": "claude/checkpoint"
+    }
+  },
+  "latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    }
+  }
+}
