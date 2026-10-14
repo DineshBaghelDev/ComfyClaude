@@ -1,6 +1,6 @@
 {
   "name": "comfyclaude",
-  "description": "ComfyClaude: local image generation for Claude via ComfyUI + Z-Image Turbo",
+  "description": "ComfyClaude: local image generation, content-aware fill and precise recolouring for Claude",
   "owner": {
     "name": "Dinesh Baghel",
     "url": "https://github.com/DineshBaghelDev"
@@ -9,7 +9,7 @@
     {
       "name": "comfyclaude",
       "source": "./",
-      "description": "Text-to-image, reference images, ControlNet, inpaint, outpaint, upscale and background removal using your own ComfyUI."
+      "description": "Local generation, reference images, ControlNet, content-aware inpaint/outpaint, precise recolouring, upscale and background removal."
     }
   ]
 }

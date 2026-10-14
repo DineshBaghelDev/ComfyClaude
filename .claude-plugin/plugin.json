@@ -1,8 +1,8 @@
 {
   "name": "comfyclaude",
   "displayName": "ComfyClaude",
-  "version": "1.1.0",
-  "description": "Local image generation for Claude through your own ComfyUI + Z-Image Turbo: text-to-image, reference images, ControlNet, inpaint, outpaint, upscale, background removal. Free, private, runs on 6 GB GPUs.",
+  "version": "1.2.0",
+  "description": "Local image generation and editing for Claude: Z-Image Turbo, content-aware inpaint/outpaint, precise CPU recolouring, reference images, ControlNet, upscale and background removal. Free, private, runs on 6 GB GPUs.",
   "author": {
     "name": "Dinesh Baghel",
     "url": "https://github.com/DineshBaghelDev"
@@ -10,7 +10,7 @@
   "homepage": "https://github.com/DineshBaghelDev/ComfyClaude",
   "repository": "https://github.com/DineshBaghelDev/ComfyClaude",
   "license": "MIT",
-  "keywords": ["image-generation", "comfyui", "z-image", "stable-diffusion", "mcp", "local-ai"],
+  "keywords": ["image-generation", "image-editing", "recoloring", "comfyui", "z-image", "stable-diffusion", "mcp", "local-ai"],
   "mcpServers": {
     "comfyclaude": {
       "command": "uv",
