@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "comfyclaude": {
-      "command": "E:/Tools/ComfyClaude/.venv/Scripts/python.exe",
-      "args": ["E:/Tools/ComfyClaude/server.py"]
-    }
-  }
-}

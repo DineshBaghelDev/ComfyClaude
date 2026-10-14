@@ -18,6 +18,15 @@ UNET_REPOS = ["jayn7/Z-Image-Turbo-GGUF", "QuantStack/Z-Image-Turbo-GGUF", "city
 CLIP_REPOS = ["unsloth/Qwen3-4B-GGUF", "Qwen/Qwen3-4B-GGUF"]
 QUANTS = {"Q8_0": "balanced", "Q5_K_M": "fast"}
 
+# Extra capability models: (repo, file in repo, models subfolder)
+EXTRAS = [
+    ("lokCX/4x-Ultrasharp", "4x-UltraSharp.pth", "upscale_models"),
+    ("Comfy-Org/BiRefNet", "background_removal/birefnet.safetensors", "background_removal"),
+    ("alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
+     "Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors", "model_patches"),
+    ("Comfy-Org/SDPose", "checkpoints/sdpose_wholebody_fp16.safetensors", "checkpoints"),
+]
+
 
 def install_gguf_node():
     node = COMFY / "custom_nodes" / "ComfyUI-GGUF"
@@ -61,8 +70,24 @@ def download_models():
     print("config.json updated with downloaded file names.")
 
 
+def download_extras():
+    from huggingface_hub import hf_hub_download
+
+    for repo, fname, sub in EXTRAS:
+        dest = MODELS / sub / Path(fname).name
+        if dest.exists():
+            print(f"Have {dest.name}")
+            continue
+        print(f"Downloading {repo}/{fname} -> {dest.parent}")
+        tmp = Path(hf_hub_download(repo, fname, local_dir=MODELS / sub / ".dl"))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp.replace(dest)
+
+
 if __name__ == "__main__":
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"])
-    install_gguf_node()
-    download_models()
-    print("Done. Restart ComfyUI Desktop.")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub[hf_xet]"])
+    if "--extras-only" not in sys.argv:
+        install_gguf_node()
+        download_models()
+    download_extras()
+    print("Done. Restart ComfyUI (start_comfy.ps1).")

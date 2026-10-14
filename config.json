@@ -1,32 +1,40 @@
 {
-  "comfy_urls": ["http://127.0.0.1:8000", "http://127.0.0.1:8188"],
+  "comfy_urls": [
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8188"
+  ],
   "comfy_root": "E:/Comfy-Desktop/ComfyUI-Installs/ComfyUI/ComfyUI",
   "models_dir": "E:/Comfy-Desktop/ComfyUI-Shared/models",
   "output_dir": "E:/Tools/ComfyClaude/outputs",
   "wait_seconds": 50,
   "default_quality": "balanced",
-
   "qualities": {
     "max": {
-      "description": "Original bf16 weights. Best quality, slowest (~150-180s, uses pagefile).",
+      "description": "Original bf16 weights. Best possible quality, slowest (heavy pagefile use).",
       "loader": "standard",
       "unet": "z_image_turbo_bf16.safetensors",
       "clip": "qwen_3_4b.safetensors"
     },
     "balanced": {
-      "description": "GGUF Q8. Near-identical to bf16, fits in RAM. Default.",
+      "description": "GGUF Q8, 8 steps. Practically identical to max. Default. ~90 s warm on this PC.",
       "loader": "gguf",
       "unet": "z_image_turbo-Q8_0.gguf",
       "clip": "Qwen3-4B-Q8_0.gguf"
     },
     "fast": {
-      "description": "GGUF Q5. Small quality loss. For drafts / throwaway images.",
+      "description": "Same Q8 models (stay cached), 6 steps. Slightly less detail. For drafts/throwaway.",
+      "loader": "gguf",
+      "unet": "z_image_turbo-Q8_0.gguf",
+      "clip": "Qwen3-4B-Q8_0.gguf",
+      "steps": 6
+    },
+    "lowmem": {
+      "description": "GGUF Q5. Uses ~3 GB less RAM but samples SLOWER on this GPU (K-quants). Only if RAM is tight.",
       "loader": "gguf",
       "unet": "z_image_turbo-Q5_K_M.gguf",
       "clip": "Qwen3-4B-Q5_K_M.gguf"
     }
   },
-
   "vae": "ae.safetensors",
   "sampler": {
     "steps": 8,
@@ -34,5 +42,9 @@
     "sampler_name": "res_multistep",
     "scheduler": "simple",
     "shift": 3.0
-  }
+  },
+  "comfy_args": [
+    "--cache-classic",
+    "--disable-pinned-memory"
+  ]
 }

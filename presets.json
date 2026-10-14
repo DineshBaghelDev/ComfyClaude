@@ -1,0 +1,14 @@
+{
+  "photo": "Professional photograph, natural lighting, sharp focus, realistic textures, shot on a full-frame camera with a 50mm lens.",
+  "cinematic": "Cinematic film still, dramatic lighting, shallow depth of field, anamorphic lens, rich color grading, subtle film grain.",
+  "portrait": "Professional portrait photograph, soft key light, detailed skin texture, catchlights in the eyes, creamy bokeh background, 85mm lens.",
+  "product": "Studio product photograph on a clean seamless background, softbox lighting, crisp reflections, commercial advertising quality.",
+  "anime": "Anime illustration, clean line art, vibrant cel shading, expressive characters, detailed background, high quality key visual.",
+  "illustration": "Digital illustration, painterly brushwork, rich colors, detailed, artstation quality.",
+  "watercolor": "Watercolor painting on textured paper, soft bleeding edges, delicate washes of color, hand-painted look.",
+  "3d": "3D render, Pixar-style stylized characters, soft global illumination, subsurface scattering, octane render quality.",
+  "poster": "Graphic design poster, bold typography, strong composition, clean layout, print-ready, vivid flat colors.",
+  "logo": "Minimal flat vector logo on a plain white background, simple shapes, clean edges, centered, no extra text.",
+  "pixel": "Pixel art, 32-bit retro game style, limited palette, crisp pixels, no anti-aliasing.",
+  "sketch": "Pencil sketch on paper, expressive hatching, graphite shading, hand-drawn look."
+}
