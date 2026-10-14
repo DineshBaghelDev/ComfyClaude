@@ -67,22 +67,22 @@ def image_to_image(q, cfg, prompt, image_name, strength, seed, steps=None, prefi
     return wf
 
 
-def controlnet(q, cfg, prompt, control_name, mode, width, height, strength, seed, steps=None, prefix="claude/control"):
-    """Z-Image Fun ControlNet Union. mode: canny | pose | direct (image is already a control map)."""
-    wf = _base(q, cfg, prompt, seed, steps, prefix)
-    wf["load"] = _load(control_name)
+def add_control(wf, cfg, control_name, mode, width, height, strength, prefix):
+    """Attach Z-Image Fun ControlNet Union to a graph built by _base.
+    mode: canny | pose | direct (the image already is a control map). Also saves the map."""
+    wf["ctrl_load"] = _load(control_name)
     if mode == "canny":
-        wf["ctrl"] = {"class_type": "Canny", "inputs": {"image": ["load", 0], "low_threshold": 0.1, "high_threshold": 0.32}}
+        wf["ctrl"] = {"class_type": "Canny", "inputs": {"image": ["ctrl_load", 0], "low_threshold": 0.1, "high_threshold": 0.32}}
     elif mode == "pose":
         wf["pose_ckpt"] = {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": cfg["models"]["pose"]}}
         wf["pose_kp"] = {"class_type": "SDPoseKeypointExtractor", "inputs": {
-            "model": ["pose_ckpt", 0], "vae": ["pose_ckpt", 2], "image": ["load", 0], "batch_size": 1}}
+            "model": ["pose_ckpt", 0], "vae": ["pose_ckpt", 2], "image": ["ctrl_load", 0], "batch_size": 1}}
         wf["ctrl"] = {"class_type": "SDPoseDrawKeypoints", "inputs": {
             "keypoints": ["pose_kp", 0], "draw_body": True, "draw_hands": True, "draw_face": True,
             "draw_feet": True, "stick_width": 4, "face_point_size": 2, "score_threshold": 0.3, "draw_head": True}}
     elif mode == "direct":
         wf["ctrl"] = {"class_type": "ImageScale", "inputs": {
-            "image": ["load", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"}}
+            "image": ["ctrl_load", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"}}
     else:
         raise ValueError(f"Unknown control mode '{mode}'. Use canny, pose or direct.")
     wf["patch"] = {"class_type": "ModelPatchLoader", "inputs": {"name": cfg["models"]["controlnet"]}}
@@ -90,10 +90,15 @@ def controlnet(q, cfg, prompt, control_name, mode, width, height, strength, seed
         "model": ["model", 0], "model_patch": ["patch", 0], "vae": ["vae", 0],
         "strength": strength, "image": ["ctrl", 0]}}
     wf["sampler"]["inputs"]["model"] = ["cn", 0]
-    wf["latent"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}
-    # Also save the control map so the result can be checked against it.
     wf["save_ctrl"] = {"class_type": "SaveImage", "inputs": {"images": ["ctrl", 0], "filename_prefix": prefix + "_map"}}
     return wf
+
+
+def controlnet(q, cfg, prompt, control_name, mode, width, height, strength, seed, steps=None, prefix="claude/control"):
+    """New image following the structure (edges/pose) of a control image."""
+    wf = _base(q, cfg, prompt, seed, steps, prefix)
+    wf["latent"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}
+    return add_control(wf, cfg, control_name, mode, width, height, strength, prefix)
 
 
 def _mask_nodes(wf, cfg, mask_mode, mask_name, grow):

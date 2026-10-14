@@ -16,28 +16,39 @@ class ComfyClient:
         self._object_info = None
 
     # ---- connection -------------------------------------------------------
+    @staticmethod
+    def _alive(url):
+        try:
+            urllib.request.urlopen(f"{url}/system_stats", timeout=3)
+            return True
+        except Exception:
+            return False
+
     def connect(self):
-        """Find the first ComfyUI URL that responds. Raises if none do."""
-        if self.base:
+        """Return a responding ComfyUI URL (re-checked each call, so a restarted
+        or crashed server is noticed). Raises ConnectionError if none respond."""
+        if self.base and self._alive(self.base):
             return self.base
         for url in self.urls:
-            try:
-                urllib.request.urlopen(f"{url}/system_stats", timeout=3)
+            if self._alive(url):
+                if url != self.base:
+                    self._object_info = None  # different/restarted server: refresh model lists
                 self.base = url
                 return url
-            except Exception:
-                continue
+        self.base = None
+        self._object_info = None
         raise ConnectionError(
             f"ComfyUI is not reachable at {self.urls}. Start ComfyUI, or set comfy_path so it can be auto-started."
         )
 
     def _get(self, path):
-        with urllib.request.urlopen(f"{self.connect()}{path}", timeout=30) as r:
+        # Uses the URL verified by the last connect(); callers run ensure_comfy() first.
+        with urllib.request.urlopen(f"{self.base or self.connect()}{path}", timeout=30) as r:
             return r.read()
 
     def _post_json(self, path, payload):
         req = urllib.request.Request(
-            f"{self.connect()}{path}",
+            f"{self.base or self.connect()}{path}",
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
         )
@@ -128,7 +139,7 @@ class ComfyClient:
             f"\r\n--{boundary}--\r\n"
         ).encode()
         req = urllib.request.Request(
-            f"{self.connect()}/upload/image",
+            f"{self.base or self.connect()}/upload/image",
             data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         )

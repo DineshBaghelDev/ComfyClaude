@@ -18,6 +18,7 @@ and run times measured on this machine. If ComfyUI or models are missing, use th
 | New image | `generate_image` |
 | Unclear direction / "show me options" | `generate_drafts` → pick the best seed → `generate_image` with that seed |
 | Variation or restyle of a given image | `generate_from_reference` (strength 0.3 subtle … 0.8 loose) |
+| Look of image A + pose/outlines of image B | `generate_from_reference` with `control_image`=B, `control_mode`=pose/canny, strength ≥ 0.7 |
 | Keep exact outlines / layout of a reference | `generate_with_control` mode=canny |
 | Copy a person's pose | `generate_with_control` mode=pose (check the saved `*_map` image) |
 | Change one part, fix a hand/face, swap an object | `inpaint` mask_mode=region, region=[x0,y0,x1,y1] as fractions |
@@ -43,11 +44,22 @@ Switching tiers reloads models (slow) — don't alternate needlessly.
 - Stay near 1 megapixel: 1024x1024, 1216x832 (landscape), 832x1216 (portrait). Upscale afterwards.
 - For a reference image, look at it first (Read) and describe in the prompt what must be kept.
 
+## Multiple references
+Z-Image takes one starting image. To combine references:
+- Two images: `generate_from_reference` (look/colors) + `control_image` (structure or pose).
+- More, or abstract qualities (a character's outfit, a style): look at each image with Read, then describe
+  precisely what to take from each in the prompt.
+
+## Where results go
+Images are saved to the ComfyClaude output folder. When the user is working on a project and wants the
+image there, pass `save_to` with an absolute path — a file (`<project>/assets/hero.png`, `.jpg`/`.webp`
+converts) or a folder. Don't copy files around manually.
+
 ## Always check your work
-After every generation, open the image with Read and compare it to the request: subject, number of
-objects, spelling of text, hands and faces, composition, style. If something is wrong, fix it before
-presenting — new seed, clearer prompt, or `inpaint` only the broken area. Then give the user the file
-path and seed (so they can reproduce or tweak it).
+Every result comes back with a preview image. Compare it to the request: subject, number of objects,
+spelling of text, hands and faces, composition, style (open the full file with Read when fine detail
+matters, e.g. small text). If something is wrong, fix it before presenting — new seed, clearer prompt,
+or `inpaint` only the broken area. Then give the user the file path and seed.
 
 ## Long jobs
 Tools wait ~50 s. If a job is still running they return a job id: call `job_status(id)` until done.

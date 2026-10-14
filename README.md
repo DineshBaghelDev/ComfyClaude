@@ -31,7 +31,7 @@ Bottom: outpaint and background removal.</sub></p>
 |---|---|
 | `generate_image` | Text → image, 12 style presets, accurate text rendering (signs, posters) |
 | `generate_drafts` | Several quick drafts side by side; pick one and finalize it |
-| `generate_from_reference` | Use an image as a reference: variations, restyling (img2img) |
+| `generate_from_reference` | Use an image as a reference: variations, restyling (img2img), optionally plus a second image for pose/outlines |
 | `generate_with_control` | Follow a reference's exact outlines (canny) or a person's pose |
 | `inpaint` | Change only part of an image: a region, the subject, or the background |
 | `outpaint` | Extend an image beyond its borders (e.g. square → widescreen) |
@@ -55,7 +55,10 @@ Bottom: outpaint and background removal.</sub></p>
 - The server builds ComfyUI workflows in code, so one graph works across all quality tiers.
 - It asks ComfyUI which model files exist (`/object_info`), so it works with any install layout.
 - If ComfyUI isn't running and you've told it where ComfyUI lives, it starts ComfyUI in the background.
-- Every image is saved with a `.json` next to it (prompt, seed, settings, time) so it can be reproduced.
+- Results come back to Claude with a small preview, so it can check them immediately.
+- Images are saved to the output folder with a `.json` next to each (prompt, seed, settings, time), and can
+  also be saved straight into your project: *"save it as assets/hero.webp"* (`save_to`).
+- If ComfyUI is already running (port 8188 or the Desktop app's 8000) it's reused; otherwise it's started.
 
 ## Requirements
 
@@ -188,6 +191,9 @@ Logs: `<output folder>/comfy_server.log` (when ComfyClaude started ComfyUI).
 - Instruction-style editing ("make the sky red") isn't included: there's no public Z-Image edit model yet,
   and Qwen-Image-Edit / Flux Kontext are heavy for 6–8 GB GPUs. Use `inpaint` or `generate_from_reference`.
 - Pose transfer is only as good as the extracted skeleton (limbs hidden by clothing can be missed).
+- References: one image as the starting point plus one for structure/pose. Blending several images'
+  subjects or styles needs a multi-reference model (e.g. a future Z-Image edit/omni release); for now
+  Claude describes extra references in the prompt.
 - NVIDIA GPUs are the tested path. AMD/Apple may work through ComfyUI but are untested.
 
 ## Models & licenses

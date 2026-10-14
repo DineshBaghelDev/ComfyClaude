@@ -2,12 +2,16 @@
   "comfy_url": "http://127.0.0.1:8188",
   "comfy_path": "",
   "comfy_python": "",
-  "comfy_args": ["--cache-classic", "--disable-pinned-memory"],
+  "comfy_args": [
+    "--cache-classic",
+    "--disable-pinned-memory"
+  ],
   "output_dir": "",
   "wait_seconds": 50,
   "start_timeout": 180,
+  "preview_size": 768,
+  "max_previews": 2,
   "default_quality": "balanced",
-
   "qualities": {
     "max": {
       "description": "Original bf16 weights. Best quality. Needs ~20 GB RAM+VRAM combined; slow on small GPUs.",
@@ -35,7 +39,6 @@
       "clip": "Qwen3-4B-Q5_K_M.gguf"
     }
   },
-
   "vae": "ae.safetensors",
   "sampler": {
     "steps": 8,
