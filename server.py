@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP, Image as MCPImage
 from PIL import Image
 
 import imaging
+import recoloring
 import settings
 import workflows
 from comfy_client import ComfyClient
@@ -29,6 +30,8 @@ depending on their GPU).
 - Quality: balanced (default) for normal use, fast for drafts/throwaway, max only when the user asks for the
   best quality. Avoid switching tiers back and forth (each switch reloads models).
 - Use generate_drafts when the direction is unclear, then generate_image with the chosen seed.
+- Colour-only edits (clothing, hair, props): use recolor_image with a precise mask. It preserves
+  source lightness, linework and geometry at original resolution and needs no diffusion model.
 - Inpaint/outpaint: edit_model=auto prefers an installed dedicated content-aware model. Require
   sd15_inpaint for masked-image conditioning; use z_image only for compatibility. Z-Image quality
   tiers do not apply to a dedicated editing checkpoint. SD 1.5 works well around 512 pixels.
@@ -488,6 +491,55 @@ def outpaint(image_path: str, prompt: str, left: int = 0, top: int = 0, right: i
 
 
 @mcp.tool(structured_output=False)
+def recolor_image(image_path: str, color: str, mask_path: str = "", region: list[float] | None = None,
+                  strength: float = 1.0, saturation: float = 1.0, feather: float = 0,
+                  save_to: str = "") -> list:
+    """Change colour inside a selection while preserving shading, linework and geometry.
+
+    Use for colour-only edits such as an orange shirt becoming blue. Runs locally on CPU;
+    ComfyUI and model files are not needed. Keeps original displayed dimensions and transparency.
+    color: opaque hex or colour name, e.g. '#3267C8' or 'royalblue'. The target supplies hue/chroma;
+    its brightness is ignored to retain source shading. Neutral targets desaturate.
+    mask_path: black/white image, white=change. A precise garment/prop mask is best.
+    region: optional [x0,y0,x1,y1] in fractions (0-1) or original pixels. If both are supplied,
+    the region intersects the file mask. A rectangle alone changes everything inside it.
+    strength 0-1 blends the colour change; saturation 0-2 controls target colour intensity.
+    feather 0-64 softens only INSIDE the mask; pixels outside its support stay identical.
+    save_to: optional absolute PNG/JPG/WebP file or folder, as with the other image tools.
+    """
+    started = time.time()
+    image = recoloring.load_image(image_path)
+    mask = recoloring.selection(image.size, mask_path, region)
+    result, applied_mask, stats = recoloring.recolor(image, mask, color, strength, saturation, feather)
+    OUT.mkdir(parents=True, exist_ok=True)
+    output = OUT / f"recolor_{time.time_ns()}.png"
+    mask_output = output.with_name(output.stem + "_mask.png")
+    result.save(output, icc_profile=image.info.get("icc_profile"))
+    applied_mask.save(mask_output)
+    meta = {"tool": "recolor_image", "source": image_path, "color": color, "mask_path": mask_path,
+            "region": region, "strength": strength, "saturation": saturation, "feather": feather,
+            "width": image.width, "height": image.height, "seconds": round(time.time()-started, 3),
+            "applied_mask": str(mask_output), **stats}
+    saved, save_error = [], ""
+    if save_to:
+        meta["save_to"] = save_to
+        try:
+            saved = _copy_to([str(output)], save_to)
+        except Exception as error:
+            save_error = f"\nCould not save to {save_to}: {error}"
+    if saved:
+        meta["saved_to"] = saved
+    output.with_suffix(".json").write_text(json.dumps(meta, indent=2))
+    text = (f"Recoloured {stats['changed_pixels']} pixels in {meta['seconds']}s. "
+            f"Original resolution {image.width}x{image.height}; shading and geometry preserved.\n"
+            f"Images:\n{output}\nApplied mask: {mask_output}")
+    if saved:
+        text += "\nSaved to: " + ", ".join(saved)
+    text += save_error
+    return _result(text, [str(output)])
+
+
+@mcp.tool(structured_output=False)
 def upscale(image_path: str, scale: float = 2.0, refine: bool = False, prompt: str = "",
             refine_strength: float = 0.3, quality: str = "", seed: int = -1, save_to: str = "") -> list:
     """Upscale an image with 4x-UltraSharp (fast, a few seconds). scale 1-4.
@@ -569,7 +621,7 @@ def list_capabilities() -> str:
         ensure_comfy()
         comfy.object_info(refresh=True)  # pick up newly added model files
     except ConnectionError as e:
-        return f"ComfyUI unavailable: {e}"
+        return f"ComfyUI unavailable: {e}\nLOCAL TOOLS\n  recolor_image [ready]: masked colour change; no ComfyUI/models required"
     timings = {}
     for m in _load_jobs().values():
         if m.get("seconds"):

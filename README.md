@@ -3,10 +3,14 @@
 **Give Claude the ability to create and edit images — locally, privately, for free — using your own
 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) and [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo).**
 
-Claude can't generate images on its own. ComfyClaude is a Claude Code plugin that connects Claude to the
-ComfyUI running on your PC. Ask in plain language — *"make a poster for my bake sale"*, *"put this product
+ComfyClaude is a Claude Code plugin that connects Claude to image tools running on your PC.
+Ask in plain language — *"make a poster for my bake sale"*, *"put this product
 on a marble table"*, *"give me four logo ideas"* — and Claude writes the prompt, runs the right workflow,
 **looks at the result itself**, fixes what's wrong, and hands you the file.
+
+Generation uses Z-Image Turbo through ComfyUI; content-aware fill can use a dedicated SD 1.5
+inpainting checkpoint. Colour-only edits use a CPU recolour path that preserves the original
+shading and linework. [Version history](CHANGELOG.md) · [GitHub releases](https://github.com/DineshBaghelDev/ComfyClaude/releases)
 
 It is tuned to run on modest hardware: everything here was built and benchmarked on a laptop RTX 4050
 with 6 GB VRAM and 16 GB RAM.
@@ -35,6 +39,7 @@ Bottom: outpaint and background removal.</sub></p>
 | `generate_with_control` | Follow a reference's exact outlines (canny) or a person's pose |
 | `inpaint` | Content-aware fill / replace a region, subject, or background with a dedicated inpainting model |
 | `outpaint` | Content-aware extension beyond image borders (e.g. square → widescreen) |
+| `recolor_image` | Change garment/prop colour while preserving shading, linework and original resolution; no models |
 | `upscale` | 2–4× upscale, optional detail-adding refine pass |
 | `remove_background` | Transparent PNG cut-outs |
 | `run_custom_workflow` | Run any workflow you export from ComfyUI |
@@ -53,6 +58,7 @@ Bottom: outpaint and background removal.</sub></p>
 - **Plugin** = the package you install. It bundles an **MCP server** (gives Claude the tools) and
   **skills** (teach Claude when to use which tool, how to prompt Z-Image, and to always check its work).
 - The server builds ComfyUI workflows in code, so one graph works across all quality tiers.
+- `recolor_image` runs directly on CPU at the original displayed resolution and needs no ComfyUI connection.
 - It asks ComfyUI which model files exist (`/object_info`), so it works with any install layout.
 - If ComfyUI isn't running and you've told it where ComfyUI lives, it starts ComfyUI in the background.
 - Results come back to Claude with a small preview, so it can check them immediately.
@@ -61,6 +67,9 @@ Bottom: outpaint and background removal.</sub></p>
 - If ComfyUI is already running (port 8188 or the Desktop app's 8000) it's reused; otherwise it's started.
 
 ## Requirements
+
+These requirements cover image generation and diffusion editing. Masked recolouring only needs
+the plugin's Python dependencies; it can run without ComfyUI or a GPU.
 
 - [Claude Code](https://code.claude.com)
 - [ComfyUI](https://www.comfy.org/download) (Desktop, portable, or manual install), recent version
@@ -264,6 +273,21 @@ For an editing workflow, also pass `"image": "C:/images/source.png"` and, when n
 
 ### Blending inpaint and outpaint
 
+For **colour-only changes**, use `recolor_image` with a precise black/white mask:
+
+```text
+recolor_image(image_path="C:/images/panel.png", mask_path="C:/images/shirt_mask.png", color="#3267C8")
+```
+
+It changes hue/chroma while retaining perceived lightness in Oklab, without regenerating any
+geometry, folds or details. Source dimensions and transparency are kept. `strength` blends
+the change (0–1), `saturation` adjusts colour intensity (0–2), and `feather` softens only inside
+the selection (0–64 original pixels, default 0). A `region` can restrict the mask or select a
+rectangle; it changes every selected pixel, so precise masks are best for clothing and hair.
+The target colour's brightness is intentionally not applied; neutral targets desaturate rather
+than changing exposure. This tool runs on CPU without ComfyUI or downloaded models and returns
+the edited image, an applied-mask path and JSON metadata. Save as PNG to retain exact pixels.
+
 Inpaint samples a larger area than it pastes, giving the model room to join new content
 to the source. Its `grow` expands the edit area; `feather` softens its edge (0–31 working
 pixels, default 16). Outpaint's `feather` blends into the source along extended edges (default
@@ -291,6 +315,18 @@ tools against local ComfyUI, and checks output sizes, protected pixels and inval
 It requires installed models and takes several minutes. It saves a report and a comparison
 image under `outputs/mcp_edit_check.*` for visual inspection. Use `--source <image.png>` to
 reuse an existing source.
+
+The recolour path has its own MCP check, which requires an image and a precise mask but no models:
+
+```text
+uv run python tests/live_recolor_check.py --source panel.png --mask shirt_mask.png --color "#3267C8"
+```
+
+It checks original dimensions, exact pixels outside the mask, perceived-lightness preservation,
+PNG project copies and input validation. Results and a comparison are saved under
+`outputs/recolor_checks/`. Inspect the mask and image visually as well: a colour-based mask can
+accidentally select similar-coloured skin outlines or background details. Remove those from the
+mask before accepting the result.
 
 ## Troubleshooting
 

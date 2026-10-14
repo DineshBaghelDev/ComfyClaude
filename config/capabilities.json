@@ -38,6 +38,11 @@
       "needs": [],
       "good_for": "content-aware canvas extension, change aspect ratio while preserving the source"
     },
+    "recolor_image": {
+      "quality": null,
+      "needs": [],
+      "good_for": "colour-only changes preserving shading, linework and original resolution; CPU, no models"
+    },
     "upscale": {
       "quality": "balanced",
       "needs": [

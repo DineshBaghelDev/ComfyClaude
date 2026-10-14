@@ -5,6 +5,10 @@ description: Set up or troubleshoot ComfyClaude — find the user's ComfyUI, pic
 
 # ComfyClaude setup
 
+For colour-only edits with `recolor_image`, no ComfyUI, GPU or model download is required.
+Use a precise local mask and install the plugin's Python dependencies normally. If ComfyUI is
+unavailable, `list_capabilities` still reports this local tool as ready.
+
 For content-aware inpaint/outpaint, also install the SD 1.5 inpainting checkpoint:
 `uv run --directory <plugin root> python setup_models.py --models-dir <actual models folder> --tiers inpaint`.
 This installs the editing checkpoint only (~4.3 GB), with no GGUF node required. Alternatively

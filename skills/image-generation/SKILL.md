@@ -1,11 +1,12 @@
 ---
 name: image-generation
-description: How to generate, edit, and refine images with the ComfyClaude tools (local ComfyUI + Z-Image Turbo). Use whenever the user asks to create, draw, render, design, edit, restyle, extend, upscale, or cut out an image, or wants a logo, poster, illustration, photo, mockup, sticker or similar visual.
+description: Generate, fill, extend, recolour and refine images with local ComfyClaude tools (ComfyUI diffusion and CPU colour edits). Use whenever the user asks to create, draw, render, design, edit, restyle, extend, recolour, upscale, or cut out an image, or wants a logo, poster, illustration, photo, mockup, sticker or similar visual.
 ---
 
 # Image generation with ComfyClaude
 
-The `mcp__comfyclaude__*` tools run image models on the user's own GPU through ComfyUI.
+The `mcp__comfyclaude__*` tools run diffusion models on the user's own GPU through ComfyUI.
+`recolor_image` runs on CPU without ComfyUI or models and retains the original displayed size.
 Jobs take from ~10 seconds to a few minutes depending on their hardware.
 
 ## Start of a session
@@ -24,6 +25,7 @@ and run times measured on this machine. If ComfyUI or models are missing, use th
 | Change one part, fix a hand/face, swap an object | `inpaint` mask_mode=region, region=[x0,y0,x1,y1] as fractions |
 | New background behind the subject | `inpaint` mask_mode=background |
 | Wider / taller image | `outpaint` |
+| Change colour only (shirt, hair, prop), keeping folds and linework | `recolor_image` with a precise mask and target colour |
 | Bigger / sharper | `upscale` (refine=True adds real detail but is slow) |
 | Transparent cut-out (stickers, products) | `remove_background` |
 | User's own ComfyUI workflow | `run_custom_workflow` |
@@ -36,6 +38,14 @@ and run times measured on this machine. If ComfyUI or models are missing, use th
 Switching tiers reloads models (slow) — don't alternate needlessly.
 
 ## Content-aware editing
+Use `recolor_image` for colour-only requests before considering diffusion. A precise file mask
+selects the garment/prop; a rectangular region also changes skin/background inside it. Inspect
+the mask first. It keeps the original resolution, perceived lightness and alpha; outside the
+selection pixels remain identical. It cannot replace objects, redraw shapes or add new details.
+Colour-based mask selection can accidentally include skin outlines, fingers or background details.
+Exclude those explicitly and inspect the final image. Keep a colour-only request on the recolour
+path instead of repeatedly increasing diffusion strength or prompt guidance.
+
 For inpaint/outpaint, prefer a dedicated editing model listed as ready in `list_capabilities`.
 `edit_model="auto"` selects an installed mask-conditioned checkpoint; use `edit_model="sd15_inpaint"`
 to require the supplied content-aware fill model. It uses its own checkpoint, encoder, VAE,
