@@ -17,6 +17,7 @@ and run times measured on this machine. If ComfyUI or models are missing, use th
 | Request | Tool |
 |---|---|
 | New image | `generate_image` |
+| NoobAI / named SDXL checkpoint / character LoRA | `generate_with_model` |
 | Unclear direction / "show me options" | `generate_drafts` → pick the best seed → `generate_image` with that seed |
 | Variation or restyle of a given image | `generate_from_reference` (strength 0.3 subtle … 0.8 loose) |
 | Look of image A + pose/outlines of image B | `generate_from_reference` with `control_image`=B, `control_mode`=pose/canny, strength ≥ 0.7 |
@@ -86,3 +87,13 @@ or `inpaint` only the broken area. Then give the user the file path and seed.
 ## Long jobs
 Tools wait ~50 s. If a job is still running they return a job id: call `job_status(id)` until done.
 If ComfyUI isn't running and a ComfyUI folder is configured, the tools start it (~30–60 s).
+
+## NoobAI / SDXL comic generation
+
+Use `generate_with_model` for named SDXL profiles, negative prompts, img2img and compatible LoRAs.
+`noobai_vpred` uses V-prediction, zero-terminal-SNR, Euler, CFG 5, 30 steps and ~1 MP.
+Use tag-style prompts and preserve approved character descriptions/LoRAs across panels.
+Project-specific comic conventions belong in a separate project skill/extension.
+Check the selected checkpoint is installed; ask before downloading missing weights.
+NoobAI V-pred 1.0 prohibits commercial use of generated products per its author model card.
+See [model setup and profiles](../../docs/noobai.md).

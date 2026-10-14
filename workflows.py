@@ -1,4 +1,4 @@
-"""Builds ComfyUI API-format workflows for Z-Image Turbo and helper models.
+"""Builds ComfyUI API-format workflows for Z-Image, SDXL and helper models.
 
 Workflows are built in code so every graph works for each quality tier
 (bf16 / GGUF Q8 / GGUF Q5) by swapping only the loader nodes. Images arrive
@@ -46,6 +46,42 @@ def _base(q, cfg, prompt, seed, steps, prefix, denoise=1.0):
         "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["vae", 0]}},
         "save": {"class_type": "SaveImage", "inputs": {"images": ["decode", 0], "filename_prefix": prefix}},
     })
+    return wf
+
+
+def checkpoint_image(profile, prompt, negative, width, height, seed, steps=0,
+                     image_name="", strength=0.6, loras=None, prefix="claude/checkpoint"):
+    """SDXL checkpoint workflow; prediction settings belong to the selected profile."""
+    wf = {"checkpoint": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": profile["checkpoint"]}}}
+    model, clip = ["checkpoint", 0], ["checkpoint", 1]
+    for i, lora in enumerate(loras or []):
+        key = f"lora_{i}"
+        wf[key] = {"class_type": "LoraLoader", "inputs": {
+            "model": model, "clip": clip, "lora_name": lora["name"],
+            "strength_model": lora.get("strength_model", 1.0), "strength_clip": lora.get("strength_clip", 1.0)}}
+        model, clip = [key, 0], [key, 1]
+    wf["prediction"] = {"class_type": "ModelSamplingDiscrete", "inputs": {
+        "model": model, "sampling": profile.get("prediction_type", "eps"), "zsnr": profile.get("zsnr", False)}}
+    model = ["prediction", 0]
+    if profile.get("cfg_rescale", 0):
+        wf["rescale"] = {"class_type": "RescaleCFG", "inputs": {"model": model, "multiplier": profile["cfg_rescale"]}}
+        model = ["rescale", 0]
+    wf.update({
+        "pos": {"class_type": "CLIPTextEncode", "inputs": {"clip": clip, "text": prompt}},
+        "neg": {"class_type": "CLIPTextEncode", "inputs": {"clip": clip, "text": negative}},
+        "sampler": {"class_type": "KSampler", "inputs": {
+            "model": model, "positive": ["pos", 0], "negative": ["neg", 0], "latent_image": ["latent", 0],
+            "seed": seed, "steps": steps or profile.get("steps", 30), "cfg": profile.get("cfg", 5.0),
+            "sampler_name": profile.get("sampler_name", "euler"), "scheduler": profile.get("scheduler", "normal"),
+            "denoise": strength if image_name else 1.0}},
+        "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["checkpoint", 2]}},
+        "save": {"class_type": "SaveImage", "inputs": {"images": ["decode", 0], "filename_prefix": prefix}},
+    })
+    if image_name:
+        wf["load"] = _load(image_name)
+        wf["latent"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["load", 0], "vae": ["checkpoint", 2]}}
+    else:
+        wf["latent"] = {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}
     return wf
 
 

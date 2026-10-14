@@ -5,6 +5,18 @@ description: Set up or troubleshoot ComfyClaude — find the user's ComfyUI, pic
 
 # ComfyClaude setup
 
+Check installed models first. Before downloading missing weights, explain the specific model,
+approximate size and purpose, then ask whether to download it unless already authorized.
+Install only the requested capabilities; `--extras` is optional, not part of the default setup.
+
+For NoobAI XL V-pred 1.0, use `--tiers noobai` (~7 GB checkpoint only, bundled CLIP/VAE,
+no GGUF node or Z-Image weights). Its author's model card prohibits commercial use of generated
+products: https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0/blob/main/README.md.
+Call `generate_with_model(model="noobai_vpred", ...)` after checking profile readiness.
+If an existing checkpoint has a different filename, override `generation_models.noobai_vpred.checkpoint`
+in the user's config. Do not apply V-pred settings to epsilon checkpoints; use a separate SDXL
+profile with `prediction_type="eps"` and `zsnr=false`, following that version's model card.
+
 For colour-only edits with `recolor_image`, no ComfyUI, GPU or model download is required.
 Use a precise local mask and install the plugin's Python dependencies normally. If ComfyUI is
 unavailable, `list_capabilities` still reports this local tool as ready.
@@ -41,7 +53,7 @@ Add `--extras` (~4.5 GB) for ControlNet, pose, background removal and upscaling.
 
 ## 4. Download
 ```
-uv run --directory <plugin root> python setup_models.py --comfy-path "<ComfyUI folder>" --tiers balanced --extras
+uv run --directory <plugin root> python setup_models.py --comfy-path "<ComfyUI folder>" --tiers balanced
 ```
 If their models live elsewhere (Desktop shared folder, extra_model_paths), add `--models-dir "<models folder>"`.
 Downloads are ~11–30 GB and resume if interrupted — run it in the background and keep the user informed.
@@ -63,7 +75,7 @@ which overrides `config/defaults.json` key by key, for example:
 
 ## 6. Verify
 Restart ComfyUI (new node/models), then call `list_capabilities` and generate one test image.
-Every tier/tool should show `ready`.
+The requested model profiles/tools should show `ready`; unused optional models may remain missing.
 
 ## Troubleshooting
 - **Slow (model reloads every image)**: start ComfyUI with `--cache-classic --disable-pinned-memory`

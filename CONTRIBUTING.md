@@ -33,6 +33,7 @@ Verify the actual MCP interface before shipping:
 ```text
 uv run --locked python tests/live_edit_check.py --source reference.png --edit-model sd15_inpaint
 uv run --locked python tests/live_recolor_check.py --source reference.png --mask selection.png --color "#3267C8"
+uv run --locked python tests/live_checkpoint_check.py
 ```
 
 The diffusion check needs local ComfyUI and its checkpoint. Recolouring requires no models.

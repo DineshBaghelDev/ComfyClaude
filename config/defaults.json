@@ -59,5 +59,23 @@
     "sampler_name": "res_multistep",
     "scheduler": "simple",
     "shift": 3.0
+  },
+  "generation_models": {
+    "noobai_vpred": {
+      "architecture": "sdxl",
+      "description": "Optional NoobAI XL V-pred 1.0 for anime/comic illustration; noncommercial model license",
+      "checkpoint": "NoobAI-XL-Vpred-v1.0.safetensors",
+      "prediction_type": "v_prediction",
+      "zsnr": true,
+      "steps": 30,
+      "cfg": 5.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "cfg_rescale": 0.2,
+      "prompt_prefix": "masterpiece, best quality, newest, highres, safe",
+      "negative_prompt": "nsfw, worst quality, low quality, lowres, signature, username, logo, bad hands, mutated hands",
+      "source": "https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0",
+      "license_url": "https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0/blob/main/README.md"
+    }
   }
 }

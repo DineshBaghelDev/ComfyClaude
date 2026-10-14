@@ -1,4 +1,4 @@
-"""ComfyClaude MCP server: gives Claude image generation via local ComfyUI + Z-Image Turbo."""
+"""ComfyClaude MCP server: local Z-Image/SDXL generation and image editing."""
 import json
 import random
 import shutil
@@ -36,6 +36,11 @@ depending on their GPU).
   sd15_inpaint for masked-image conditioning; use z_image only for compatibility. Z-Image quality
   tiers do not apply to a dedicated editing checkpoint. SD 1.5 works well around 512 pixels.
 - Z-Image generation: detailed natural language; text to render goes in quotes; ~1 MP sizes.
+- SDXL/NoobAI: use generate_with_model with a named generation_models profile, tag-style prompts,
+  negative prompts and optional compatible LoRAs. Check profile readiness; never silently change
+  checkpoints. Comic-specific characters, prompts and panel conventions belong in a project extension.
+- Check existing models before setup. Explain required downloads and sizes and obtain the user's
+  agreement before downloading missing weights; install only models needed for the requested tools.
 - Content-aware fill: describe the replacement content concisely, e.g. "blue lake water, small
   ripples" to remove a boat. Describe what should appear in the mask rather than just "remove".
 - Results come back with a preview image: ALWAYS check it against the request (subject, counts, text
@@ -283,6 +288,71 @@ def _run(wf, meta, note="", save_to=""):
 
 
 # ---- generation tools ----------------------------------------------------------
+@mcp.tool(structured_output=False)
+def generate_with_model(prompt: str, model: str = "noobai_vpred", negative_prompt: str | None = None,
+                        width: int = 832, height: int = 1216, seed: int = -1, steps: int = 0,
+                        image_path: str = "", strength: float = 0.6,
+                        loras: list[dict] | None = None, save_to: str = "") -> list:
+    """Generate with a named SDXL checkpoint profile (including NoobAI), optionally img2img/LoRAs.
+
+    See list_capabilities for model profiles and installed LoRA filenames. No weights are downloaded.
+    NoobAI uses tag-style prompts. Model-specific sampling is independent of Z-Image quality tiers.
+    negative_prompt=None uses the profile default; an empty string disables it. LoRAs are dictionaries
+    with name, strength_model and strength_clip; use LoRAs compatible with the chosen checkpoint.
+    image_path supplies an optional composition reference, not guaranteed character identity.
+    NoobAI is a generation checkpoint, not the dedicated inpaint/outpaint backend.
+    """
+    profiles = CFG.get("generation_models", {})
+    if model not in profiles:
+        raise ValueError(f"Unknown model '{model}'. Options: {list(profiles)}")
+    profile = profiles[model]
+    if profile.get("architecture") != "sdxl":
+        raise ValueError("generate_with_model supports SDXL checkpoint profiles only")
+    if profile.get("prediction_type", "eps") not in ("eps", "v_prediction"):
+        raise ValueError("prediction_type must be eps or v_prediction")
+    if width < 64 or height < 64 or width % 8 or height % 8:
+        raise ValueError("width/height must be multiples of 8 and at least 64")
+    if not 0 < strength <= 1 or steps < 0:
+        raise ValueError("strength must be >0 and <=1; steps must be >=0")
+    ensure_comfy()
+    info = comfy.object_info(refresh=True)
+    required = ["CheckpointLoaderSimple", "ModelSamplingDiscrete", "CLIPTextEncode", "KSampler",
+                "VAEDecode", "SaveImage", "VAEEncode" if image_path else "EmptyLatentImage"]
+    if profile.get("cfg_rescale", 0):
+        required.append("RescaleCFG")
+    if loras:
+        required.append("LoraLoader")
+    missing_nodes = [node for node in required if node not in info]
+    if missing_nodes:
+        raise RuntimeError(f"Missing ComfyUI nodes: {missing_nodes}. Update ComfyUI.")
+    if not _has("CheckpointLoaderSimple", "ckpt_name", profile["checkpoint"]):
+        raise FileNotFoundError(f"Missing checkpoint: {profile['checkpoint']}. Install it in ComfyUI models/checkpoints. "
+                                "No automatic download or model fallback. For NoobAI V-pred: setup_models.py --tiers noobai. "
+                                "Ask before downloading weights; check the model license.")
+    for lora in loras or []:
+        if not isinstance(lora, dict) or not isinstance(lora.get("name"), str):
+            raise ValueError("Each LoRA needs a filename in name")
+        if not _has("LoraLoader", "lora_name", lora["name"]):
+            raise FileNotFoundError(f"Missing LoRA: {lora['name']}. Install a compatible file in models/loras.")
+        for key in ("strength_model", "strength_clip"):
+            if not isinstance(lora.get(key, 1.0), (int, float)) or not -10 <= lora.get(key, 1.0) <= 10:
+                raise ValueError(f"LoRA {key} must be between -10 and 10")
+    full = ", ".join(p for p in (profile.get("prompt_prefix", ""), prompt) if p)
+    negative = profile.get("negative_prompt", "") if negative_prompt is None else negative_prompt
+    seed = _seed(seed)
+    image_name = ""
+    if image_path:
+        WORK.mkdir(parents=True, exist_ok=True)
+        image_name = comfy.upload_image(imaging.prepare_exact(image_path, width, height, WORK))
+    wf = workflows.checkpoint_image(profile, full, negative, width, height, seed, steps,
+                                    image_name, strength, loras)
+    meta = {"tool": "generate_with_model", "model": model, "checkpoint": profile["checkpoint"],
+            "profile": profile, "prompt": full, "negative_prompt": negative, "width": width, "height": height,
+            "seed": seed, "steps": steps or profile.get("steps", 30), "reference": image_path,
+            "strength": strength if image_path else 1.0, "loras": loras or []}
+    return _run(wf, meta, f"Model: {model}\n", save_to)
+
+
 @mcp.tool(structured_output=False)
 def generate_image(prompt: str, width: int = 1024, height: int = 1024, quality: str = "",
                    style: str = "", seed: int = -1, steps: int = 0, save_to: str = "") -> list:
@@ -630,6 +700,11 @@ def list_capabilities() -> str:
     for name, q in CFG["qualities"].items():
         problem = _quality_problem(q)
         lines.append(f"  {name}: {q['description']} [{'ready' if not problem else problem}]")
+    lines.append("\nGENERATION MODELS (generate_with_model; optional SDXL checkpoints)")
+    for name, profile in CFG.get("generation_models", {}).items():
+        ready = _has("CheckpointLoaderSimple", "ckpt_name", profile["checkpoint"])
+        lines.append(f"  {name}: {profile.get('description', name)} [{'ready' if ready else 'missing checkpoint: ' + profile['checkpoint']}]")
+    lines.append("  LoRAs: " + (", ".join(comfy.options("LoraLoader", "lora_name") or []) or "(none installed)"))
     lines.append("\nTOOLS")
     for tool, info in CAPS["tools"].items():
         missing = [CFG["models"][k] for k in info["needs"] if not _has(*CAPS["model_nodes"][k], CFG["models"][k])]

@@ -2,6 +2,16 @@
 
 Changes are grouped by version. Historical entries describe the code at their original tags.
 
+## Unreleased
+
+- Added optional SDXL checkpoint profiles and `generate_with_model` with negative prompts,
+  reference img2img, compatible LoRA chains and model settings recorded in output metadata.
+- Added NoobAI XL V-pred 1.0 settings and `--tiers noobai`, downloading only its checkpoint.
+  Existing Z-Image defaults and dedicated editing tools are unchanged.
+- Setup guidance now checks installed models and asks before missing-model downloads,
+  with extras opt-in. Documented separate personal comic extensions and NoobAI's model license.
+
+
 ## [v1.2.0] - 2026-10-15
 
 ### Content-aware editing

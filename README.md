@@ -34,6 +34,7 @@ Bottom: outpaint and background removal.</sub></p>
 | Tool | What it does |
 |---|---|
 | `generate_image` | Text → image, 12 style presets, accurate text rendering (signs, posters) |
+| `generate_with_model` | Optional SDXL/NoobAI checkpoints, negative prompts, reference img2img and compatible LoRAs |
 | `generate_drafts` | Several quick drafts side by side; pick one and finalize it |
 | `generate_from_reference` | Use an image as a reference: variations, restyling (img2img), optionally plus a second image for pose/outlines |
 | `generate_with_control` | Follow a reference's exact outlines (canny) or a person's pose |
@@ -95,7 +96,7 @@ On older versions:
 The setup skill finds your ComfyUI, asks about your GPU, installs the
 [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) node and downloads the right models. Or do it yourself:
 ```
-uv run --directory <plugin folder> python setup_models.py --comfy-path "C:/path/to/ComfyUI" --tiers balanced --extras
+uv run --directory <plugin folder> python setup_models.py --comfy-path "C:/path/to/ComfyUI" --tiers balanced
 ```
 
 **3. Configure** (`/plugin` → comfyclaude → configure):
@@ -365,3 +366,5 @@ ComfyClaude's code is [MIT](LICENSE). Models are downloaded from their authors a
 | 4x-UltraSharp upscaler | CC BY-NC-SA 4.0 (**non-commercial**) — swap via `models.upscaler` for commercial use |
 
 Thanks to the ComfyUI, ComfyUI-GGUF, Tongyi-MAI and Alibaba PAI teams.
+
+Optional NoobAI/SDXL setup and comic extension guidance: [docs/noobai.md](docs/noobai.md).

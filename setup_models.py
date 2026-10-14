@@ -5,11 +5,13 @@ Examples:
   python setup_models.py --comfy-path C:/ComfyUI --tiers balanced,lowmem --extras
   python setup_models.py --models-dir D:/shared/models --tiers max  # custom models folder
   python setup_models.py --models-dir D:/shared/models --tiers inpaint  # content-aware editing only
+  python setup_models.py --models-dir D:/shared/models --tiers noobai   # optional NoobAI checkpoint only
   python setup_models.py --check                                   # show what's installed
 
 Tiers: balanced/fast (Q8, ~11 GB), lowmem (Q5, ~8.5 GB), max (bf16, ~19 GB).
 Extras (~4.5 GB): ControlNet Union 2.1 lite, SDPose, BiRefNet, 4x-UltraSharp.
 --inpaint adds SD 1.5 Inpainting (~4.3 GB) for content-aware editing.
+--tiers noobai downloads NoobAI XL V-pred 1.0 (~7 GB); check the author's noncommercial license.
 Re-running is safe: finished files are skipped, interrupted downloads resume.
 """
 import argparse
@@ -21,6 +23,7 @@ import settings
 
 # name -> (repo, file in repo, models subfolder)
 FILES = {
+    "noobai":     ("Laxhar/noobai-XL-Vpred-1.0", "NoobAI-XL-Vpred-v1.0.safetensors", "checkpoints"),
     "inpaint":    ("stable-diffusion-v1-5/stable-diffusion-inpainting", "sd-v1-5-inpainting.ckpt", "checkpoints"),
     "vae":        ("Comfy-Org/z_image_turbo", "split_files/vae/ae.safetensors", "vae"),
     "unet_bf16":  ("Comfy-Org/z_image_turbo", "split_files/diffusion_models/z_image_turbo_bf16.safetensors", "diffusion_models"),
@@ -39,6 +42,7 @@ TIERS = {
     "balanced": ["unet_q8", "clip_q8"], "fast": ["unet_q8", "clip_q8"],
     "lowmem": ["unet_q5", "clip_q5"], "max": ["unet_bf16", "clip_bf16"],
     "inpaint": ["inpaint"],
+    "noobai": ["noobai"],
 }
 EXTRAS = ["controlnet", "pose", "bg_removal", "upscaler"]
 GGUF_NODE = "https://github.com/city96/ComfyUI-GGUF"
@@ -78,7 +82,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comfy-path", default=cfg["comfy_path"], help="ComfyUI folder (contains main.py)")
     ap.add_argument("--models-dir", help="models folder (default: <comfy-path>/models)")
-    ap.add_argument("--tiers", default="balanced", help="comma list: balanced,lowmem,max,inpaint (fast = balanced files; inpaint = editing only)")
+    ap.add_argument("--tiers", default="balanced", help="comma list: balanced,lowmem,max,inpaint,noobai (inpaint/noobai = standalone checkpoints only)")
     ap.add_argument("--extras", action="store_true", help="also download ControlNet, pose, background removal, upscaler")
     ap.add_argument("--inpaint", action="store_true", help="also download the content-aware SD 1.5 inpainting checkpoint (~4.3 GB)")
     ap.add_argument("--no-node", action="store_true", help="skip installing the ComfyUI-GGUF custom node")
@@ -92,7 +96,7 @@ def main():
     unknown = [t for t in tiers if t not in TIERS]
     if unknown:
         ap.error(f"unknown tiers {unknown}; choose from {list(TIERS)}")
-    keys = (["vae"] if any(t != "inpaint" for t in tiers) else []) + [k for t in tiers for k in TIERS[t]] + (EXTRAS if a.extras else []) + (["inpaint"] if a.inpaint else [])
+    keys = (["vae"] if any(t in ("balanced", "fast", "lowmem", "max") for t in tiers) else []) + [k for t in tiers for k in TIERS[t]] + (EXTRAS if a.extras else []) + (["inpaint"] if a.inpaint else [])
     keys = list(dict.fromkeys(keys))
 
     if a.check:
@@ -107,6 +111,9 @@ def main():
         else:
             install_gguf_node(a.comfy_path, settings.find_comfy_python(a.comfy_path, cfg.get("comfy_python", "")))
 
+    if "noobai" in keys:
+        print("NoobAI V-pred 1.0: ~7 GB; author's model card prohibits commercial use of model-generated products.")
+        print("License/settings: https://huggingface.co/Laxhar/noobai-XL-Vpred-1.0/blob/main/README.md")
     print(f"Downloading into {models_dir}")
     for k in keys:
         download(k, models_dir)

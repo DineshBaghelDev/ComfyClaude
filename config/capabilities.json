@@ -56,6 +56,11 @@
         "bg_removal"
       ],
       "good_for": "transparent PNG cut-outs, product shots, stickers"
+    },
+    "generate_with_model": {
+      "quality": null,
+      "needs": [],
+      "good_for": "SDXL/NoobAI text-to-image or img2img; named checkpoint and optional character/style LoRAs; check generation model readiness"
     }
   },
   "model_nodes": {

@@ -2,7 +2,7 @@
   "name": "comfyclaude",
   "displayName": "ComfyClaude",
   "version": "1.2.0",
-  "description": "Local image generation and editing for Claude: Z-Image Turbo, content-aware inpaint/outpaint, precise CPU recolouring, reference images, ControlNet, upscale and background removal. Free, private, runs on 6 GB GPUs.",
+  "description": "Local image generation and editing for Claude: Z-Image Turbo, optional SDXL/NoobAI model profiles and LoRAs, content-aware fill, precise recolouring, ControlNet and upscaling.",
   "author": {
     "name": "Dinesh Baghel",
     "url": "https://github.com/DineshBaghelDev"
@@ -10,11 +10,29 @@
   "homepage": "https://github.com/DineshBaghelDev/ComfyClaude",
   "repository": "https://github.com/DineshBaghelDev/ComfyClaude",
   "license": "MIT",
-  "keywords": ["image-generation", "image-editing", "recoloring", "comfyui", "z-image", "stable-diffusion", "mcp", "local-ai"],
+  "keywords": [
+    "image-generation",
+    "image-editing",
+    "recoloring",
+    "comfyui",
+    "z-image",
+    "stable-diffusion",
+    "mcp",
+    "local-ai",
+    "sdxl",
+    "noobai"
+  ],
   "mcpServers": {
     "comfyclaude": {
       "command": "uv",
-      "args": ["run", "--quiet", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "server.py"],
+      "args": [
+        "run",
+        "--quiet",
+        "--directory",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "python",
+        "server.py"
+      ],
       "env": {
         "COMFYUI_URL": "${user_config.comfyui_url}",
         "COMFYUI_PATH": "${user_config.comfyui_path}",
