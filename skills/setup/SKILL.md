@@ -5,6 +5,12 @@ description: Set up or troubleshoot ComfyClaude — find the user's ComfyUI, pic
 
 # ComfyClaude setup
 
+For content-aware inpaint/outpaint, also install the SD 1.5 inpainting checkpoint:
+`uv run --directory <plugin root> python setup_models.py --models-dir <actual models folder> --tiers inpaint`.
+This installs the editing checkpoint only (~4.3 GB), with no GGUF node required. Alternatively
+add `--inpaint` to the normal Z-Image setup command. Check `list_capabilities` afterwards and
+select `edit_model="sd15_inpaint"` to require the dedicated backend.
+
 The plugin root is two folders above this skill's directory (it contains `setup_models.py`).
 Run its scripts with `uv run --directory <plugin root> python <script>`.
 

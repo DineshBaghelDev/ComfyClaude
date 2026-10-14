@@ -33,8 +33,8 @@ Bottom: outpaint and background removal.</sub></p>
 | `generate_drafts` | Several quick drafts side by side; pick one and finalize it |
 | `generate_from_reference` | Use an image as a reference: variations, restyling (img2img), optionally plus a second image for pose/outlines |
 | `generate_with_control` | Follow a reference's exact outlines (canny) or a person's pose |
-| `inpaint` | Change only part of an image: a region, the subject, or the background |
-| `outpaint` | Extend an image beyond its borders (e.g. square → widescreen) |
+| `inpaint` | Content-aware fill / replace a region, subject, or background with a dedicated inpainting model |
+| `outpaint` | Content-aware extension beyond image borders (e.g. square → widescreen) |
 | `upscale` | 2–4× upscale, optional detail-adding refine pass |
 | `remove_background` | Transparent PNG cut-outs |
 | `run_custom_workflow` | Run any workflow you export from ComfyUI |
@@ -174,6 +174,124 @@ Everything is overridable in **`~/.comfyclaude/config.json`** — it's merged ov
   Claude runs it with `run_custom_workflow`. See [`workflows_custom/example_t2i_bf16.json`](workflows_custom/example_t2i_bf16.json).
 - **Other models / new tools**: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Using a different model
+
+For **content-aware inpaint/outpaint**, install the dedicated checkpoint:
+
+```text
+uv run python setup_models.py --models-dir "C:/path/to/ComfyUI/models" --tiers inpaint
+```
+
+Use your actual shared models folder for ComfyUI Desktop. This adds the published SD 1.5
+inpainting checkpoint (~4.3 GB); its license is CreativeML OpenRAIL-M. The tool's
+`edit_model="auto"` prefers an installed editing checkpoint and reports the backend used.
+`edit_model="sd15_inpaint"` requires that checkpoint and errors if it is unavailable.
+This supplies both the masked image and mask through `InpaintModelConditioning` rather than
+only sampling with a noise mask. Start at `megapixels=0.26` (~512×512 working source) on a 6 GB GPU.
+`edit_model="z_image"` explicitly keeps the previous Z-Image workflow.
+
+To use another compatible SD-style **inpainting checkpoint**, install it under
+`models/checkpoints` and add a named editing model in `~/.comfyclaude/config.json`:
+
+```json
+{
+  "editing": {
+    "default_model": "my_fill",
+    "models": {
+      "my_fill": {
+        "description": "My dedicated inpainting checkpoint",
+        "checkpoint": "my-inpaint-model.safetensors",
+        "steps": 24,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras"
+      }
+    }
+  }
+}
+```
+
+Restart the plugin's MCP server after changing config, check `list_capabilities`, then use
+`edit_model="my_fill"` on `inpaint` or `outpaint`. This checkpoint backend is tested with
+SD 1.5 inpainting; other families needing different loaders or conditioning use custom workflows.
+Z-Image `quality` tiers do not apply when a dedicated editing model is selected.
+
+For a **compatible Z-Image Turbo fine-tune**, install its diffusion weights in ComfyUI's
+`models/diffusion_models` (or the shared folder configured in your ComfyUI installation).
+Add a tier in `~/.comfyclaude/config.json`, keeping the matching text encoder and VAE:
+
+```json
+{
+  "qualities": {
+    "custom": {
+      "description": "My Z-Image Turbo fine-tune",
+      "loader": "standard",
+      "unet": "my-z-image-turbo.safetensors",
+      "clip": "qwen_3_4b.safetensors"
+    }
+  }
+}
+```
+
+For compatible GGUF weights, use `"loader": "gguf"` with the corresponding GGUF diffusion
+and text-encoder files. Restart the plugin's MCP server after editing its config. Call
+`list_capabilities` to confirm the tier is ready, then ask Claude to use `quality="custom"`.
+If its files are missing, the plugin may fall back to another installed tier and reports that
+in the result. `default_quality` can also be set to `custom` for tools without their own default;
+explicitly passing `quality` is the reliable way to select it for every generation/edit tool.
+For editing with a Z-Image fine-tune, also pass `edit_model="z_image"` so an installed dedicated
+inpainting checkpoint does not take precedence.
+
+For **a different model family**, such as SDXL or Flux, use its own working ComfyUI workflow.
+The built-in tools use Z-Image's text encoder, latent format and sampling setup; a filename
+override does not make those graphs compatible with another family.
+
+1. Install the model and any nodes its workflow needs, and verify the workflow in ComfyUI.
+2. Use **File → Export Workflow (API)**, and save it as
+   `~/.comfyclaude/workflows/my_model.json` (API format, rather than the editor's ordinary JSON).
+3. Replace the positive prompt value with `"{{prompt}}"` and the seed value with `"{{seed}}"`.
+   For editing, replace a LoadImage filename with `"{{image}}"`; use `"{{image_mask}}"` for
+   a separate mask image. Keep the model-specific loader and conditioning nodes intact.
+4. Ask Claude to call:
+
+```text
+run_custom_workflow(name="my_model", params={"prompt": "An alpine lake", "seed": 42})
+```
+
+For an editing workflow, also pass `"image": "C:/images/source.png"` and, when needed,
+`"image_mask": "C:/images/mask.png"`. Existing local files in parameters starting with
+`image` are uploaded automatically. Include a SaveImage node so the plugin can return the result.
+
+### Blending inpaint and outpaint
+
+Inpaint samples a larger area than it pastes, giving the model room to join new content
+to the source. Its `grow` expands the edit area; `feather` softens its edge (0–31 working
+pixels, default 16). Outpaint's `feather` blends into the source along extended edges (default
+40 working pixels; less than half each working source dimension), with progressively less
+sampling noise inside that overlap to retain source structure. Setting `feather=0` gives
+a hard join. Pixels outside the blend remain identical to the **resized working source**;
+the tools still resize inputs according to `megapixels`.
+
+Describe the whole scene, including lighting and texture, in the edit prompt. Soft blending
+reduces boundary artifacts but cannot guarantee matching content for every prompt or seed.
+Give an inserted object enough room inside the mask; if the model draws it across the blend
+boundary, its edges can fade or clip. Prefer the dedicated `sd15_inpaint` backend for
+content-aware fill. For model families with a different conditioning setup, use their own
+editing graph through `run_custom_workflow`.
+
+To verify locally before a release, run the regression checks and the real MCP smoke test:
+
+```text
+uv run python -m unittest discover -s tests -p "test_*.py" -v
+uv run python tests/live_edit_check.py
+```
+
+The live test launches this checkout's MCP server over stdio, calls its generation and editing
+tools against local ComfyUI, and checks output sizes, protected pixels and invalid parameters.
+It requires installed models and takes several minutes. It saves a report and a comparison
+image under `outputs/mcp_edit_check.*` for visual inspection. Use `--source <image.png>` to
+reuse an existing source.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -183,6 +301,7 @@ Everything is overridable in **`~/.comfyclaude/config.json`** — it's merged ov
 | Every image is slow, model reloads | Start ComfyUI with `--cache-classic --disable-pinned-memory` |
 | Out of memory | `lowmem` tier, smaller images then `upscale`, close other GPU apps, bigger pagefile |
 | Missing model files | `setup_models.py --check`, then download the missing tier/extras |
+| Windows access violation in ComfyUI-GGUF during model unloading | On the locally tested ComfyUI 0.40.0 / PyTorch 2.12.1 setup, the final outpaint test completed with `--disable-dynamic-vram --disable-async-offload`. Try these server launch flags if available in your ComfyUI version; reducing canvas size also reduces memory pressure. This is a runtime workaround, not a guarantee for every GGUF installation. |
 
 Logs: `<output folder>/comfy_server.log` (when ComfyClaude started ComfyUI).
 
@@ -203,6 +322,7 @@ ComfyClaude's code is [MIT](LICENSE). Models are downloaded from their authors a
 | Model | License |
 |---|---|
 | [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) (+ [GGUF](https://huggingface.co/jayn7/Z-Image-Turbo-GGUF)) | Apache-2.0 |
+| [SD 1.5 Inpainting](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-inpainting) (optional content-aware fill) | CreativeML OpenRAIL-M |
 | [Qwen3-4B](https://huggingface.co/unsloth/Qwen3-4B-GGUF) text encoder | Apache-2.0 |
 | [Z-Image Turbo Fun ControlNet Union 2.1](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1) | Apache-2.0 |
 | [SDPose](https://huggingface.co/Comfy-Org/SDPose), [BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet) | MIT |

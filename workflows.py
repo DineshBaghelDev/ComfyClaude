@@ -53,6 +53,33 @@ def _load(name):
     return {"class_type": "LoadImage", "inputs": {"image": name}}
 
 
+def _edit_base(q, cfg, prompt, seed, steps, prefix, strength, edit_model):
+    if edit_model is None:
+        return _base(q, cfg, prompt, seed, steps, prefix, denoise=strength)
+    return {
+        "checkpoint": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": edit_model["checkpoint"]}},
+        "pos": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["checkpoint", 1], "text": prompt}},
+        "neg": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["checkpoint", 1], "text": edit_model.get("negative_prompt", "")}},
+        "sampler": {"class_type": "KSampler", "inputs": {
+            "model": ["checkpoint", 0], "positive": ["latent", 0], "negative": ["latent", 1],
+            "latent_image": ["latent", 2], "seed": seed, "steps": edit_model["steps"],
+            "cfg": edit_model["cfg"], "sampler_name": edit_model["sampler_name"],
+            "scheduler": edit_model["scheduler"], "denoise": strength}},
+        "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["checkpoint", 2]}},
+        "save": {"class_type": "SaveImage", "inputs": {"images": ["decode", 0], "filename_prefix": prefix}},
+    }
+
+
+def _edit_latent(wf, pixels, mask, edit_model):
+    if edit_model is not None:
+        wf["latent"] = {"class_type": "InpaintModelConditioning", "inputs": {
+            "positive": ["pos", 0], "negative": ["neg", 0], "vae": ["checkpoint", 2],
+            "pixels": pixels, "mask": mask, "noise_mask": True}}
+    else:
+        wf["enc"] = {"class_type": "VAEEncode", "inputs": {"pixels": pixels, "vae": ["vae", 0]}}
+        wf["latent"] = {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["enc", 0], "mask": mask}}
+
+
 def text_to_image(q, cfg, prompt, width, height, seed, steps=None, prefix="claude/t2i"):
     wf = _base(q, cfg, prompt, seed, steps, prefix)
     wf["latent"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}
@@ -117,27 +144,44 @@ def _mask_nodes(wf, cfg, mask_mode, mask_name, grow):
     wf["mask"] = {"class_type": "GrowMask", "inputs": {"mask": ["mask_raw", 0], "expand": grow, "tapered_corners": True}}
 
 
-def inpaint(q, cfg, prompt, image_name, mask_mode, mask_name, strength, grow, seed, steps=None, prefix="claude/inpaint"):
+def inpaint(q, cfg, prompt, image_name, mask_mode, mask_name, strength, grow, seed, steps=None, prefix="claude/inpaint", feather=16, edit_model=None):
     """Regenerate only the masked area; everything else is pasted back pixel-exact."""
-    wf = _base(q, cfg, prompt, seed, steps, prefix, denoise=strength)
+    wf = _edit_base(q, cfg, prompt, seed, steps, prefix, strength, edit_model)
     wf["load"] = _load(image_name)
     _mask_nodes(wf, cfg, mask_mode, mask_name, grow)
-    wf["enc"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["load", 0], "vae": ["vae", 0]}}
-    wf["latent"] = {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["enc", 0], "mask": ["mask", 0]}}
+    if not 0 <= feather <= 31:
+        raise ValueError("feather must be between 0 and 31 pixels")
+    blend_mask = ["mask", 0]
+    if feather:
+        wf["mask_image"] = {"class_type": "MaskToImage", "inputs": {"mask": blend_mask}}
+        wf["mask_blur"] = {"class_type": "ImageBlur", "inputs": {
+            "image": ["mask_image", 0], "blur_radius": feather, "sigma": 1.0}}
+        wf["blend_mask"] = {"class_type": "ImageToMask", "inputs": {"image": ["mask_blur", 0], "channel": "red"}}
+        blend_mask = ["blend_mask", 0]
+    # Sample beyond the blend's finite support so it never pastes an unsampled edge.
+    wf["sample_mask"] = {"class_type": "GrowMask", "inputs": {
+        "mask": ["mask", 0], "expand": feather + 16, "tapered_corners": False}}
+    _edit_latent(wf, ["load", 0], ["sample_mask", 0], edit_model)
     wf["composite"] = {"class_type": "ImageCompositeMasked", "inputs": {
-        "destination": ["load", 0], "source": ["decode", 0], "x": 0, "y": 0, "resize_source": False, "mask": ["mask", 0]}}
+        "destination": ["load", 0], "source": ["decode", 0], "x": 0, "y": 0, "resize_source": False, "mask": blend_mask}}
     wf["save"]["inputs"]["images"] = ["composite", 0]
     return wf
 
 
-def outpaint(q, cfg, prompt, image_name, left, top, right, bottom, seed, steps=None, prefix="claude/outpaint"):
-    """Extend the canvas; only the new border area is generated."""
-    wf = _base(q, cfg, prompt, seed, steps, prefix)
+def outpaint(q, cfg, prompt, image_name, left, top, right, bottom, seed, steps=None, prefix="claude/outpaint", feather=40, edit_model=None):
+    """Generate borders with overlap; preserve the prepared source outside the blend."""
+    if not 0 <= feather <= 16368:
+        raise ValueError("feather must be between 0 and 16368 pixels")
+    wf = _edit_base(q, cfg, prompt, seed, steps, prefix, 1.0, edit_model)
     wf["load"] = _load(image_name)
     wf["pad"] = {"class_type": "ImagePadForOutpaint", "inputs": {
-        "image": ["load", 0], "left": left, "top": top, "right": right, "bottom": bottom, "feathering": 40}}
-    wf["enc"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["pad", 0], "vae": ["vae", 0]}}
-    wf["latent"] = {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["enc", 0], "mask": ["pad", 1]}}
+        "image": ["load", 0], "left": left, "top": top, "right": right, "bottom": bottom, "feathering": feather}}
+    # Gradually reduce noise within the source overlap to retain edge structure.
+    _edit_latent(wf, ["pad", 0], ["pad", 1], edit_model)
+    wf["composite"] = {"class_type": "ImageCompositeMasked", "inputs": {
+        "destination": ["pad", 0], "source": ["decode", 0], "x": 0, "y": 0,
+        "resize_source": False, "mask": ["pad", 1]}}
+    wf["save"]["inputs"]["images"] = ["composite", 0]
     return wf
 
 

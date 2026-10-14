@@ -35,6 +35,18 @@ and run times measured on this machine. If ComfyUI or models are missing, use th
 - `lowmem`: only when RAM is tight.
 Switching tiers reloads models (slow) — don't alternate needlessly.
 
+## Content-aware editing
+For inpaint/outpaint, prefer a dedicated editing model listed as ready in `list_capabilities`.
+`edit_model="auto"` selects an installed mask-conditioned checkpoint; use `edit_model="sd15_inpaint"`
+to require the supplied content-aware fill model. It uses its own checkpoint, encoder, VAE,
+steps and CFG; Z-Image `quality` tiers do not apply. If it is missing, install with
+`setup_models.py --inpaint`. `edit_model="z_image"` explicitly selects the compatibility workflow.
+Start around 512 pixels / `megapixels=0.26` for SD 1.5; upscale afterwards if needed.
+Leave room for the entire object inside an inpaint mask and inspect joins after outpainting.
+Use `feather` to soften the paste boundary; feathering alone does not supply image conditioning.
+For content-aware removal, describe the replacement texture concisely (e.g. "blue lake water,
+small gentle ripples"). Prefer a short fill prompt over a long full-scene description for SD 1.5.
+
 ## Prompting Z-Image Turbo
 - Write detailed natural-language sentences: subject, setting, lighting, camera or art style, mood.
 - Text to render goes in quotes and should be short: a sign reading "OPEN 24H".

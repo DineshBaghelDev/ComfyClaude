@@ -12,6 +12,19 @@
   "preview_size": 768,
   "max_previews": 2,
   "default_quality": "balanced",
+  "editing": {
+    "default_model": "auto",
+    "models": {
+      "sd15_inpaint": {
+        "description": "Content-aware SD 1.5 inpainting with masked-image conditioning",
+        "checkpoint": "sd-v1-5-inpainting.ckpt",
+        "steps": 24,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras"
+      }
+    }
+  },
   "qualities": {
     "max": {
       "description": "Original bf16 weights. Best quality. Needs ~20 GB RAM+VRAM combined; slow on small GPUs.",

@@ -23,13 +23,18 @@ JOBS_FILE = OUT / "jobs.json"
 CUSTOM_DIRS = [ROOT / "workflows_custom", settings.USER_DIR / "workflows"]
 imaging.clean_old(WORK)
 
-INSTRUCTIONS = """Local image generation through the user's own ComfyUI with Z-Image Turbo (jobs take ~10 s to a few minutes
+INSTRUCTIONS = """Local image generation through the user's own ComfyUI with Z-Image Turbo and dedicated inpainting models (jobs take ~10 s to a few minutes
 depending on their GPU).
 - Call list_capabilities once per session to see ready tools, default qualities and measured times on this PC.
 - Quality: balanced (default) for normal use, fast for drafts/throwaway, max only when the user asks for the
   best quality. Avoid switching tiers back and forth (each switch reloads models).
 - Use generate_drafts when the direction is unclear, then generate_image with the chosen seed.
-- Prompts: detailed natural language; text to render goes in quotes; no negative prompts; ~1 MP sizes.
+- Inpaint/outpaint: edit_model=auto prefers an installed dedicated content-aware model. Require
+  sd15_inpaint for masked-image conditioning; use z_image only for compatibility. Z-Image quality
+  tiers do not apply to a dedicated editing checkpoint. SD 1.5 works well around 512 pixels.
+- Z-Image generation: detailed natural language; text to render goes in quotes; ~1 MP sizes.
+- Content-aware fill: describe the replacement content concisely, e.g. "blue lake water, small
+  ripples" to remove a boat. Describe what should appear in the mask rather than just "remove".
 - Results come back with a preview image: ALWAYS check it against the request (subject, counts, text
   spelling, hands/faces); open the full file with Read for fine detail. Fix problems (new seed, better
   prompt, or inpaint the broken area) before presenting.
@@ -130,6 +135,32 @@ def _pick_quality(name, tool):
 
 def _seed(seed):
     return seed if seed >= 0 else random.randint(0, 2**31 - 1)
+
+
+def _pick_edit_model(name, quality, tool):
+    """Prefer installed mask-conditioned checkpoints; allow explicit Z-Image compatibility."""
+    ensure_comfy()
+    editing = CFG.get("editing", {})
+    models = editing.get("models", {})
+    name = name or editing.get("default_model", "auto")
+    if name not in ("auto", "z_image") and name not in models:
+        raise ValueError(f"Unknown edit_model '{name}'. Options: {['auto', 'z_image', *models]}")
+    if name != "z_image":
+        comfy.object_info(refresh=True)
+        ready = [key for key, model in models.items()
+                 if _has("CheckpointLoaderSimple", "ckpt_name", model["checkpoint"])]
+        chosen = (ready[0] if ready else None) if name == "auto" else name
+        if chosen:
+            if chosen not in ready:
+                raise FileNotFoundError(f"Missing editing checkpoint: {models[chosen]['checkpoint']}. "
+                                        "Install it in ComfyUI models/checkpoints. For sd15_inpaint run setup_models.py --inpaint.")
+            model = {"steps": 24, "cfg": 7.0, "sampler_name": "dpmpp_2m", "scheduler": "karras", **models[chosen]}
+            return chosen, None, model, f"Content-aware fill model: {chosen}.\n"
+        note = "Dedicated inpainting model unavailable; using Z-Image compatibility mode. Install with setup_models.py --inpaint.\n"
+    else:
+        note = "Z-Image compatibility mode (no dedicated masked-image conditioning).\n"
+    qname, q, quality_note = _pick_quality(quality, tool)
+    return qname, q, None, note + quality_note
 
 
 def _styled(prompt, style):
@@ -378,23 +409,31 @@ def generate_with_control(prompt: str, image_path: str, mode: str = "canny", str
 @mcp.tool(structured_output=False)
 def inpaint(image_path: str, prompt: str, mask_mode: str = "region", region: list[float] | None = None,
             mask_path: str = "", ellipse: bool = False, strength: float = 1.0, grow: int = 16,
-            quality: str = "", seed: int = -1, megapixels: float = 1.0, save_to: str = "") -> list:
-    """Regenerate only part of an image; the rest stays pixel-identical.
+            quality: str = "", seed: int = -1, megapixels: float = 1.0, save_to: str = "", feather: int = 16,
+            edit_model: str = "") -> list:
+    """Regenerate part of an image; outside the blend area the prepared source stays pixel-identical.
 
     mask_mode:
       "region": region = [x0, y0, x1, y1] as fractions of width/height (0-1), e.g. [0.3,0.1,0.7,0.5].
                  ellipse=True for a round mask (faces, heads).
       "file": mask_path = black/white image, white = change.
       "subject": change the main subject (auto-detected).  "background": replace the background.
-    prompt describes the WHOLE desired image (not just the patch).
+    prompt describes desired replacement content concisely for dedicated inpainting models.
+    For z_image compatibility mode, describe the whole desired image.
     strength 1.0 = fully new content in the mask; 0.5-0.8 = keep some of the original there.
-    grow expands the mask in pixels for smoother blending.
+    grow expands the edit area in working pixels. feather (0-31, default 16) softens its boundary.
+    Sampling extends beyond the blend area; feather=0 gives a hard paste.
+    edit_model: auto (default) prefers an installed dedicated content-aware inpainting checkpoint;
+    sd15_inpaint selects the supplied SD 1.5 inpainting backend; z_image uses the old compatibility
+    workflow. quality only selects a Z-Image tier when that backend is used.
     save_to: optional absolute path (a file like C:/proj/assets/hero.png, or a folder) to also save
     the result into, e.g. the user's project. A .jpg/.webp extension converts the format.
     """
+    if not 0 <= feather <= 31:
+        raise ValueError("feather must be between 0 and 31 pixels")
     if mask_mode in ("subject", "background"):
         _need("bg_removal")
-    qname, q, note = _pick_quality(quality, "inpaint")
+    qname, q, editing_model, note = _pick_edit_model(edit_model, quality, "inpaint")
     seed = _seed(seed)
     ensure_comfy()
     prepared, w, h = imaging.prepare(image_path, WORK, megapixels)
@@ -406,32 +445,45 @@ def inpaint(image_path: str, prompt: str, mask_mode: str = "region", region: lis
         mask_name = comfy.upload_image(imaging.region_mask(w, h, region, WORK, ellipse=ellipse))
     elif mask_mode == "file":
         mask_name = comfy.upload_image(imaging.resize_mask(mask_path, w, h, WORK))
-    wf = workflows.inpaint(q, CFG, prompt, name, mask_mode, mask_name, strength, grow, seed, q.get("steps"))
+    wf = workflows.inpaint(q, CFG, prompt, name, mask_mode, mask_name, strength, grow, seed,
+                           q.get("steps") if q else None, feather=feather, edit_model=editing_model)
     meta = {"tool": "inpaint", "prompt": prompt, "source": image_path, "mask_mode": mask_mode,
-            "region": region, "strength": strength, "seed": seed, "quality": qname}
+            "region": region, "strength": strength, "grow": grow, "feather": feather, "seed": seed, "quality": qname,
+            "edit_model": qname if editing_model else "z_image"}
     return _run(wf, meta, note, save_to)
 
 
 @mcp.tool(structured_output=False)
 def outpaint(image_path: str, prompt: str, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0,
-             quality: str = "", seed: int = -1, megapixels: float = 0.8, save_to: str = "") -> list:
+             quality: str = "", seed: int = -1, megapixels: float = 0.8, save_to: str = "", feather: int = 40,
+             edit_model: str = "") -> list:
     """Extend an image beyond its borders (e.g. make a square photo wide).
     left/top/right/bottom: pixels to add on each side, measured at the working size
     (the source is first scaled to ~megapixels; e.g. 1024x768 -> add right=256 left=256).
     prompt describes the whole extended scene.
+    feather: overlap into the original in working pixels (default 40). The original outside
+    this overlap is preserved; 0 disables blending. Must be less than half each source dimension.
+    edit_model: auto prefers an installed dedicated content-aware inpainting checkpoint;
+    sd15_inpaint requires that backend; z_image forces compatibility mode. quality only applies to Z-Image.
     save_to: optional absolute path (a file like C:/proj/assets/hero.png, or a folder) to also save
     the result into, e.g. the user's project. A .jpg/.webp extension converts the format.
     """
-    qname, q, note = _pick_quality(quality, "outpaint")
+    if not 0 <= feather <= 16368:
+        raise ValueError("feather must be between 0 and 16368 pixels")
+    qname, q, editing_model, note = _pick_edit_model(edit_model, quality, "outpaint")
     seed = _seed(seed)
     r16 = lambda v: max(0, round(v / 16) * 16)
     left, top, right, bottom = r16(left), r16(top), r16(right), r16(bottom)
     if not any((left, top, right, bottom)):
         raise ValueError("Give at least one of left/top/right/bottom > 0")
     name, w, h = _upload(image_path, megapixels)
-    wf = workflows.outpaint(q, CFG, prompt, name, left, top, right, bottom, seed, q.get("steps"))
+    if feather and feather * 2 >= min(w, h):
+        raise ValueError("feather must be less than half each working source dimension")
+    wf = workflows.outpaint(q, CFG, prompt, name, left, top, right, bottom, seed,
+                            q.get("steps") if q else None, feather=feather, edit_model=editing_model)
     meta = {"tool": "outpaint", "prompt": prompt, "source": image_path, "pad": [left, top, right, bottom],
-            "seed": seed, "quality": qname, "width": w + left + right, "height": h + top + bottom}
+            "seed": seed, "quality": qname, "feather": feather, "width": w + left + right, "height": h + top + bottom,
+            "edit_model": qname if editing_model else "z_image"}
     return _run(wf, meta, note, save_to)
 
 
@@ -535,6 +587,11 @@ def list_capabilities() -> str:
         lines.append(f"  {tool} [{state}] default quality={info['quality']}: {info['good_for']}"
                      + (f"\n      measured: {times}" if times else ""))
     lines.append("\nSTYLE PRESETS: " + ", ".join(PRESETS))
+    lines.append("\nEDITING MODELS (inpaint/outpaint)")
+    for name, model in CFG.get("editing", {}).get("models", {}).items():
+        ready = _has("CheckpointLoaderSimple", "ckpt_name", model["checkpoint"])
+        lines.append(f"  {name}: {model.get('description', name)} [{'ready' if ready else 'missing checkpoint: ' + model['checkpoint']}]")
+    lines.append("  auto: prefer an installed editing model; z_image: legacy compatibility workflow")
     customs = sorted(_custom_workflows())
     lines.append("CUSTOM WORKFLOWS: " + (", ".join(customs) if customs else "(none)"))
     lines.append(f"\nOutputs: {OUT}   User config: {settings.user_config_path()}")

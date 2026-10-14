@@ -4,10 +4,12 @@ Examples:
   python setup_models.py --comfy-path C:/ComfyUI                 # balanced tier (Q8) + VAE
   python setup_models.py --comfy-path C:/ComfyUI --tiers balanced,lowmem --extras
   python setup_models.py --models-dir D:/shared/models --tiers max  # custom models folder
+  python setup_models.py --models-dir D:/shared/models --tiers inpaint  # content-aware editing only
   python setup_models.py --check                                   # show what's installed
 
 Tiers: balanced/fast (Q8, ~11 GB), lowmem (Q5, ~8.5 GB), max (bf16, ~19 GB).
 Extras (~4.5 GB): ControlNet Union 2.1 lite, SDPose, BiRefNet, 4x-UltraSharp.
+--inpaint adds SD 1.5 Inpainting (~4.3 GB) for content-aware editing.
 Re-running is safe: finished files are skipped, interrupted downloads resume.
 """
 import argparse
@@ -19,6 +21,7 @@ import settings
 
 # name -> (repo, file in repo, models subfolder)
 FILES = {
+    "inpaint":    ("stable-diffusion-v1-5/stable-diffusion-inpainting", "sd-v1-5-inpainting.ckpt", "checkpoints"),
     "vae":        ("Comfy-Org/z_image_turbo", "split_files/vae/ae.safetensors", "vae"),
     "unet_bf16":  ("Comfy-Org/z_image_turbo", "split_files/diffusion_models/z_image_turbo_bf16.safetensors", "diffusion_models"),
     "clip_bf16":  ("Comfy-Org/z_image_turbo", "split_files/text_encoders/qwen_3_4b.safetensors", "text_encoders"),
@@ -35,6 +38,7 @@ FILES = {
 TIERS = {
     "balanced": ["unet_q8", "clip_q8"], "fast": ["unet_q8", "clip_q8"],
     "lowmem": ["unet_q5", "clip_q5"], "max": ["unet_bf16", "clip_bf16"],
+    "inpaint": ["inpaint"],
 }
 EXTRAS = ["controlnet", "pose", "bg_removal", "upscaler"]
 GGUF_NODE = "https://github.com/city96/ComfyUI-GGUF"
@@ -74,8 +78,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--comfy-path", default=cfg["comfy_path"], help="ComfyUI folder (contains main.py)")
     ap.add_argument("--models-dir", help="models folder (default: <comfy-path>/models)")
-    ap.add_argument("--tiers", default="balanced", help="comma list: balanced,lowmem,max (fast = balanced files)")
+    ap.add_argument("--tiers", default="balanced", help="comma list: balanced,lowmem,max,inpaint (fast = balanced files; inpaint = editing only)")
     ap.add_argument("--extras", action="store_true", help="also download ControlNet, pose, background removal, upscaler")
+    ap.add_argument("--inpaint", action="store_true", help="also download the content-aware SD 1.5 inpainting checkpoint (~4.3 GB)")
     ap.add_argument("--no-node", action="store_true", help="skip installing the ComfyUI-GGUF custom node")
     ap.add_argument("--check", action="store_true", help="only report which files exist")
     a = ap.parse_args()
@@ -87,7 +92,7 @@ def main():
     unknown = [t for t in tiers if t not in TIERS]
     if unknown:
         ap.error(f"unknown tiers {unknown}; choose from {list(TIERS)}")
-    keys = ["vae"] + [k for t in tiers for k in TIERS[t]] + (EXTRAS if a.extras else [])
+    keys = (["vae"] if any(t != "inpaint" for t in tiers) else []) + [k for t in tiers for k in TIERS[t]] + (EXTRAS if a.extras else []) + (["inpaint"] if a.inpaint else [])
     keys = list(dict.fromkeys(keys))
 
     if a.check:
@@ -95,7 +100,7 @@ def main():
             print(f"  {'OK ' if (models_dir / sub / Path(fname).name).exists() else '-- '} {sub}/{Path(fname).name}")
         return
 
-    needs_gguf = any(t != "max" for t in tiers)
+    needs_gguf = any(t in ("balanced", "fast", "lowmem") for t in tiers)
     if needs_gguf and not a.no_node:
         if not a.comfy_path:
             print("!! No --comfy-path: install https://github.com/city96/ComfyUI-GGUF yourself (ComfyUI Manager works).")

@@ -31,12 +31,12 @@
     "inpaint": {
       "quality": "balanced",
       "needs": [],
-      "good_for": "change one area: fix hands/faces, replace objects, new background"
+      "good_for": "content-aware fill: remove/replace objects, repair one area, new background"
     },
     "outpaint": {
       "quality": "balanced",
       "needs": [],
-      "good_for": "extend the canvas, change aspect ratio"
+      "good_for": "content-aware canvas extension, change aspect ratio while preserving the source"
     },
     "upscale": {
       "quality": "balanced",
