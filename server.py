@@ -5,6 +5,10 @@ import shutil
 import subprocess
 import sys
 import time
+import re
+import urllib.request
+import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP, Image as MCPImage
@@ -20,7 +24,8 @@ ROOT = Path(__file__).parent
 CFG, CAPS, PRESETS = settings.load()
 OUT = Path(CFG["output_dir"])
 WORK = OUT / "_work"
-JOBS_FILE = OUT / "jobs.json"
+DIAGNOSTICS = OUT / "mcp-runs" / "diagnostics"
+JOBS_FILE = DIAGNOSTICS / "jobs.json"
 CUSTOM_DIRS = [ROOT / "workflows_custom", settings.USER_DIR / "workflows"]
 imaging.clean_old(WORK)
 
@@ -63,8 +68,12 @@ def _start_comfy(log):
     port = CFG["comfy_url"].rsplit(":", 1)[-1].split("/")[0]
     cmd = [settings.find_comfy_python(path, CFG.get("comfy_python", "")), "main.py",
            "--port", port if port.isdigit() else "8188", *CFG.get("comfy_args", [])]
+    return _spawn_detached(cmd, path, log)
+
+
+def _spawn_detached(cmd, cwd, log):
     # stdin/stdout must not inherit the MCP stdio channel.
-    kw = dict(cwd=path, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+    kw = dict(cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         for extra in (subprocess.CREATE_BREAKAWAY_FROM_JOB, 0):  # breakaway may be refused
@@ -87,7 +96,8 @@ def ensure_comfy():
         if not (Path(CFG["comfy_path"]) / "main.py").exists():
             raise ConnectionError(f"comfy_path '{CFG['comfy_path']}' has no main.py (point it at the ComfyUI folder).")
     OUT.mkdir(parents=True, exist_ok=True)
-    log_path = OUT / "comfy_server.log"
+    log_path = DIAGNOSTICS / "comfy_server.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     _start_comfy(open(log_path, "ab"))
     end = time.time() + CFG["start_timeout"]
     while time.time() < end:
@@ -179,6 +189,17 @@ def _styled(prompt, style):
     return f"{prompt.rstrip('. ')}. {PRESETS[style]}"
 
 
+def _check_loras(loras, node="LoraLoader"):
+    for lora in loras or []:
+        if not isinstance(lora, dict) or not isinstance(lora.get("name"), str):
+            raise ValueError("Each LoRA needs a filename in name")
+        if not _has(node, "lora_name", lora["name"]):
+            raise FileNotFoundError(f"Missing LoRA: {lora['name']}. Install a compatible file in models/loras.")
+        for key in ("strength_model", "strength_clip"):
+            if not isinstance(lora.get(key, 1.0), (int, float)) or not -10 <= lora.get(key, 1.0) <= 10:
+                raise ValueError(f"LoRA {key} must be between -10 and 10")
+
+
 def _upload(path, megapixels=None):
     """Upload a local image (optionally resized to ~megapixels). Returns (name, w, h)."""
     if not Path(path).exists():
@@ -197,10 +218,31 @@ def _load_jobs():
 
 
 def _save_job(pid, meta):
-    OUT.mkdir(parents=True, exist_ok=True)
+    JOBS_FILE.parent.mkdir(parents=True, exist_ok=True)
     jobs = _load_jobs()
     jobs[pid] = meta
     JOBS_FILE.write_text(json.dumps(jobs, indent=2))
+
+
+def _slug(value):
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "default").lower()).strip("-") or "default"
+
+
+def _run_output_dir(meta):
+    """Create a unique, tool-grouped directory for one MCP generation job."""
+    tool = _slug(meta.get("tool", "image"))
+    model = _slug(meta.get("model") or meta.get("workflow") or meta.get("quality") or "default")
+    seed = meta.get("seed")
+    seed_tag = f"__seed-{seed}" if isinstance(seed, int) and seed >= 0 else ""
+    parent = OUT / "mcp-runs" / tool
+    stem = f"run-{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}__{model}{seed_tag}"
+    run_dir = parent / stem
+    suffix = 2
+    while run_dir.exists():
+        run_dir = parent / f"{stem}-{suffix:02d}"
+        suffix += 1
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
 
 
 def _submit(wf, meta):
@@ -225,7 +267,9 @@ def _collect(pid, timeout):
     if meta.get("files"):  # already collected earlier
         saved = f"\nSaved to: {', '.join(meta['saved_to'])}" if meta.get("saved_to") else ""
         return f"Done ({meta.get('quality')}).{saved}", meta["files"]
-    paths = comfy.download_outputs(hist, OUT)
+    run_dir = _run_output_dir(meta)
+    paths = comfy.download_outputs(hist, run_dir)
+    meta["output_dir"] = str(run_dir)
     meta["seconds"] = round(time.time() - meta.get("submitted", time.time()), 1)
     meta["files"] = paths
     saved = ""
@@ -329,14 +373,7 @@ def generate_with_model(prompt: str, model: str = "noobai_vpred", negative_promp
         raise FileNotFoundError(f"Missing checkpoint: {profile['checkpoint']}. Install it in ComfyUI models/checkpoints. "
                                 "No automatic download or model fallback. For NoobAI V-pred: setup_models.py --tiers noobai. "
                                 "Ask before downloading weights; check the model license.")
-    for lora in loras or []:
-        if not isinstance(lora, dict) or not isinstance(lora.get("name"), str):
-            raise ValueError("Each LoRA needs a filename in name")
-        if not _has("LoraLoader", "lora_name", lora["name"]):
-            raise FileNotFoundError(f"Missing LoRA: {lora['name']}. Install a compatible file in models/loras.")
-        for key in ("strength_model", "strength_clip"):
-            if not isinstance(lora.get(key, 1.0), (int, float)) or not -10 <= lora.get(key, 1.0) <= 10:
-                raise ValueError(f"LoRA {key} must be between -10 and 10")
+    _check_loras(loras)
     full = ", ".join(p for p in (profile.get("prompt_prefix", ""), prompt) if p)
     negative = profile.get("negative_prompt", "") if negative_prompt is None else negative_prompt
     seed = _seed(seed)
@@ -355,7 +392,8 @@ def generate_with_model(prompt: str, model: str = "noobai_vpred", negative_promp
 
 @mcp.tool(structured_output=False)
 def generate_image(prompt: str, width: int = 1024, height: int = 1024, quality: str = "",
-                   style: str = "", seed: int = -1, steps: int = 0, save_to: str = "") -> list:
+                   style: str = "", seed: int = -1, steps: int = 0, save_to: str = "",
+                   loras: list[dict] | None = None) -> list:
     """Generate an image from text with Z-Image Turbo.
 
     quality: "balanced" (GGUF Q8, default, near-identical to original), "fast" (same model, 6 steps,
@@ -365,33 +403,38 @@ def generate_image(prompt: str, width: int = 1024, height: int = 1024, quality: 
     Returns saved image paths (open them with Read to check the result) or a job id if still running.
     save_to: optional absolute path (a file like C:/proj/assets/hero.png, or a folder) to also save
     the result into, e.g. the user's project. A .jpg/.webp extension converts the format.
+    loras: optional Z-Image-compatible LoRAs as dictionaries with name and strength_model (model-only).
     """
     qname, q, note = _pick_quality(quality, "generate_image")
+    _check_loras(loras, "LoraLoaderModelOnly")
     seed = _seed(seed)
     full = _styled(prompt, style)
     steps = steps or q.get("steps") or CFG["sampler"]["steps"]
-    wf = workflows.text_to_image(q, CFG, full, width, height, seed, steps)
+    wf = workflows.add_model_loras(workflows.text_to_image(q, CFG, full, width, height, seed, steps), loras)
     meta = {"tool": "generate_image", "prompt": full, "width": width, "height": height,
-            "seed": seed, "quality": qname, "steps": steps}
+            "seed": seed, "quality": qname, "steps": steps, "loras": loras or []}
     return _run(wf, meta, note, save_to)
 
 
 @mcp.tool(structured_output=False)
 def generate_drafts(prompt: str, count: int = 4, width: int = 768, height: int = 768,
-                    quality: str = "", style: str = "", seed: int = -1) -> list:
+                    quality: str = "", style: str = "", seed: int = -1, loras: list[dict] | None = None) -> list:
     """Quickly generate several low-res drafts with different seeds (default: fast quality),
     plus one contact sheet to compare them. Pick the best seed, then call generate_image with that
     seed at full size / higher quality. Note: changing size changes the composition somewhat.
+    loras: optional Z-Image-compatible LoRAs, as in generate_image.
     """
     qname, q, note = _pick_quality(quality, "generate_drafts")
+    _check_loras(loras, "LoraLoaderModelOnly")
     base = _seed(seed)
     full = _styled(prompt, style)
     pids = []
     for i in range(max(1, min(count, 8))):
         s = base + i
-        wf = workflows.text_to_image(q, CFG, full, width, height, s, q.get("steps"), prefix="claude/draft")
+        wf = workflows.add_model_loras(workflows.text_to_image(
+            q, CFG, full, width, height, s, q.get("steps"), prefix="claude/draft"), loras)
         pids.append((s, _submit(wf, {"tool": "generate_drafts", "prompt": full, "width": width,
-                                     "height": height, "seed": s, "quality": qname})))
+                                     "height": height, "seed": s, "quality": qname, "loras": loras or []})))
     results, pending = [], []
     end = time.time() + CFG["wait_seconds"] * 3
     for s, pid in pids:
@@ -414,7 +457,7 @@ def generate_drafts(prompt: str, count: int = 4, width: int = 768, height: int =
 def generate_from_reference(prompt: str, image_path: str, strength: float = 0.6, quality: str = "",
                             style: str = "", seed: int = -1, megapixels: float = 1.0,
                             control_image: str = "", control_mode: str = "canny", control_strength: float = 0,
-                            save_to: str = "") -> list:
+                            save_to: str = "", loras: list[dict] | None = None) -> list:
     """Generate a new image based on a reference image (img2img). Keeps composition and colors.
 
     strength 0.2-0.4: small changes, stays close to the reference.
@@ -437,12 +480,13 @@ def generate_from_reference(prompt: str, image_path: str, strength: float = 0.6,
         if not Path(control_image).exists():
             raise FileNotFoundError(f"Image not found: {control_image}")
     qname, q, note = _pick_quality(quality, "generate_from_reference")
+    _check_loras(loras, "LoraLoaderModelOnly")
     seed = _seed(seed)
     full = _styled(prompt, style)
     name, w, h = _upload(image_path, megapixels)
-    wf = workflows.image_to_image(q, CFG, full, name, strength, seed, q.get("steps"))
-    meta = {"tool": "generate_from_reference", "prompt": full, "reference": image_path,
-            "strength": strength, "seed": seed, "quality": qname, "width": w, "height": h}
+    wf = workflows.add_model_loras(workflows.image_to_image(q, CFG, full, name, strength, seed, q.get("steps")), loras)
+    meta = {"tool": "generate_from_reference", "prompt": full, "reference": image_path, "strength": strength,
+            "seed": seed, "quality": qname, "width": w, "height": h, "loras": loras or []}
     if control_image:
         control_strength = control_strength or (0.8 if control_mode == "canny" else 1.0)
         cname = comfy.upload_image(imaging.prepare_exact(control_image, w, h, WORK))
@@ -454,7 +498,8 @@ def generate_from_reference(prompt: str, image_path: str, strength: float = 0.6,
 
 @mcp.tool(structured_output=False)
 def generate_with_control(prompt: str, image_path: str, mode: str = "canny", strength: float = 0,
-                          quality: str = "", style: str = "", seed: int = -1, megapixels: float = 1.0, save_to: str = "") -> list:
+                          quality: str = "", style: str = "", seed: int = -1, megapixels: float = 1.0, save_to: str = "",
+                          loras: list[dict] | None = None) -> list:
     """Generate an image that follows the structure of a reference using Z-Image ControlNet Union.
 
     mode "canny": follow the outlines/edges of the reference (architecture, objects, layouts).
@@ -470,12 +515,13 @@ def generate_with_control(prompt: str, image_path: str, mode: str = "canny", str
     _need("controlnet", *(["pose"] if mode == "pose" else []))
     strength = strength or (0.8 if mode == "canny" else 1.0)
     qname, q, note = _pick_quality(quality, "generate_with_control")
+    _check_loras(loras, "LoraLoaderModelOnly")
     seed = _seed(seed)
     full = _styled(prompt, style)
     name, w, h = _upload(image_path, megapixels)
-    wf = workflows.controlnet(q, CFG, full, name, mode, w, h, strength, seed, q.get("steps"))
+    wf = workflows.add_model_loras(workflows.controlnet(q, CFG, full, name, mode, w, h, strength, seed, q.get("steps")), loras)
     meta = {"tool": "generate_with_control", "prompt": full, "reference": image_path, "mode": mode,
-            "strength": strength, "seed": seed, "quality": qname, "width": w, "height": h}
+            "strength": strength, "seed": seed, "quality": qname, "width": w, "height": h, "loras": loras or []}
     return _run(wf, meta, note, save_to)
 
 
@@ -657,6 +703,9 @@ def run_custom_workflow(name: str, params: dict | None = None, save_to: str = ""
         raise FileNotFoundError(f"No custom workflow '{name}'. Available: {sorted(found)}")
     path = found[name]
     params = dict(params or {})
+    unfilled = sorted(set(re.findall(r"\{\{\s*(\w+)\s*\}\}", path.read_text())) - set(params) - {"seed"})
+    if unfilled:
+        raise ValueError(f"Workflow '{name}' needs values for: {unfilled}")
     ensure_comfy()
     for k, v in params.items():
         if k.startswith("image") and isinstance(v, str) and Path(v).exists():
@@ -743,6 +792,32 @@ def free_memory() -> str:
     ensure_comfy()
     comfy.free_memory()
     return "Models unloaded."
+
+
+@mcp.tool(structured_output=False)
+def open_ui(port: int = 8199) -> str:
+    """Open ComfyClaude Studio, a local web UI for every tool here (generate, drafts, SDXL, reference,
+    ControlNet, custom workflows, inpaint with a mask brush, outpaint, recolour, upscale, cut-out),
+    in the user's browser. Starts it in the background if it is not running yet."""
+    url = f"http://127.0.0.1:{port}"
+    try:
+        urllib.request.urlopen(f"{url}/api/tasks", timeout=2)
+        webbrowser.open(url)
+        return f"ComfyClaude Studio is already running: {url} (opened in the browser)"
+    except OSError:
+        pass
+    log_path = DIAGNOSTICS / "ui.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    _spawn_detached([sys.executable, str(ROOT / "ui.py"), "--port", str(port)], ROOT, open(log_path, "ab"))
+    end = time.time() + 30
+    while time.time() < end:
+        time.sleep(1)
+        try:
+            urllib.request.urlopen(f"{url}/api/tasks", timeout=2)
+            return f"ComfyClaude Studio started: {url} (opened in the browser)"
+        except OSError:
+            continue
+    raise RuntimeError(f"Studio did not start within 30s. See {log_path}")
 
 
 if __name__ == "__main__":

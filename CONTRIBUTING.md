@@ -4,6 +4,8 @@
 | Path | What |
 |---|---|
 | `server.py` | MCP server: tool definitions, job handling, ComfyUI auto-start |
+| `ui.py`, `ui/index.html` | Studio: stdlib HTTP server and ComfyUI websocket listener calling the same tool functions, plus a single-file vanilla JS page |
+| `commands/` | Plugin slash commands (`/comfyclaude:studio`) |
 | `workflows.py` | Builds ComfyUI API-format graphs for each tool (one graph per tool, loaders swapped per tier) |
 | `imaging.py` | Pillow helpers: resizing to model-friendly sizes, masks, contact sheets |
 | `recoloring.py` | CPU colour transforms: masked Oklab hue/chroma changes with lightness and alpha preservation |

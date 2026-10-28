@@ -2,6 +2,29 @@
 
 Changes are grouped by version. Historical entries describe the code at their original tags.
 
+## [v1.4.0] - 2026-10-28
+
+### Studio web UI
+
+- Added ComfyClaude Studio (`ui.py`), a local web UI for every tool, opened with `/comfyclaude:studio`,
+  the new `open_ui` MCP tool, or `uv run python ui.py`. It reuses the MCP tool functions, so outputs,
+  history and settings are shared with Claude.
+- Mask editor (brush, box, eraser, invert, select-all, undo), outpaint canvas preview with aspect
+  presets, before/after comparison, batches, draft finalizing, settings reuse and recent prompts.
+- Live sampling progress over ComfyUI's websocket, optional live previews, cancel, retry and
+  clear-queue controls, desktop notifications, searchable history with tool filters.
+- Custom workflows get a searchable list and generated fields for each placeholder.
+- Listens on 127.0.0.1 only and rejects other Host and Origin headers and POSTs without its own header.
+
+### Generation
+
+- `generate_image`, `generate_drafts`, `generate_from_reference` and `generate_with_control` accept
+  model-only Z-Image LoRAs (`loras`), recorded in output metadata.
+- `run_custom_workflow` reports unfilled `{{placeholders}}` before contacting ComfyUI instead of
+  sending them to ComfyUI as literal values.
+- Job outputs are grouped per run under `mcp-runs/<tool>/run-<time>__<model>__seed-<n>/`, with
+  `jobs.json` and the ComfyUI log under `mcp-runs/diagnostics/`.
+
 ## [v1.3.0] - 2026-10-15
 
 - Added optional SDXL checkpoint profiles and `generate_with_model` with negative prompts,

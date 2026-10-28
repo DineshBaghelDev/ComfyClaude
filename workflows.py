@@ -116,6 +116,17 @@ def _edit_latent(wf, pixels, mask, edit_model):
         wf["latent"] = {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["enc", 0], "mask": mask}}
 
 
+def add_model_loras(wf, loras):
+    """Chain model-only LoRAs between the Z-Image UNet loader and its sampling patch."""
+    source = ["unet", 0]
+    for i, lora in enumerate(loras or []):
+        wf[f"lora_{i}"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+            "model": source, "lora_name": lora["name"], "strength_model": lora.get("strength_model", 1.0)}}
+        source = [f"lora_{i}", 0]
+    wf["model"]["inputs"]["model"] = source
+    return wf
+
+
 def text_to_image(q, cfg, prompt, width, height, seed, steps=None, prefix="claude/t2i"):
     wf = _base(q, cfg, prompt, seed, steps, prefix)
     wf["latent"] = {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}

@@ -1,7 +1,7 @@
 {
   "name": "comfyclaude",
   "displayName": "ComfyClaude",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Local image generation and editing for Claude: Z-Image Turbo, optional SDXL/NoobAI model profiles and LoRAs, content-aware fill, precise recolouring, ControlNet and upscaling.",
   "author": {
     "name": "Dinesh Baghel",

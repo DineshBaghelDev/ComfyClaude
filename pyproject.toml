@@ -1,6 +1,6 @@
 [project]
 name = "comfyclaude"
-version = "1.3.0"
+version = "1.4.0"
 description = "Local image generation, content-aware fill and precise recolouring for Claude"
 readme = "README.md"
 license = "MIT"

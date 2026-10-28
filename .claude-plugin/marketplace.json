@@ -9,7 +9,7 @@
     {
       "name": "comfyclaude",
       "source": "./",
-      "description": "Local generation with optional SDXL/NoobAI profiles, comic skills/templates, content-aware fill and precise recolouring."
+      "description": "Local generation with a web UI (Studio), Z-Image LoRAs, optional SDXL/NoobAI profiles, comic skills/templates, content-aware fill and precise recolouring."
     }
   ]
 }

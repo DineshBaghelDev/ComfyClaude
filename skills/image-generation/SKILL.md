@@ -84,6 +84,12 @@ spelling of text, hands and faces, composition, style (open the full file with R
 matters, e.g. small text). If something is wrong, fix it before presenting — new seed, clearer prompt,
 or `inpaint` only the broken area. Then give the user the file path and seed.
 
+## Studio (web UI) and LoRAs
+If the user wants to click rather than chat, or asks for the UI/studio, call `open_ui` and give them
+the URL. Z-Image tools (`generate_image`, `generate_drafts`, `generate_from_reference`,
+`generate_with_control`) accept `loras=[{"name": ..., "strength_model": 0.55}]` for Z-Image-compatible
+style LoRAs; list installed files with `list_capabilities`.
+
 ## Long jobs
 Tools wait ~50 s. If a job is still running they return a job id: call `job_status(id)` until done.
 If ComfyUI isn't running and a ComfyUI folder is configured, the tools start it (~30–60 s).

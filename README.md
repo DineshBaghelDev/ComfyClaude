@@ -33,7 +33,7 @@ Bottom: outpaint and background removal.</sub></p>
 
 | Tool | What it does |
 |---|---|
-| `generate_image` | Text → image, 12 style presets, accurate text rendering (signs, posters) |
+| `generate_image` | Text → image, 12 style presets, optional Z-Image LoRAs, accurate text rendering (signs, posters) |
 | `generate_with_model` | Optional SDXL/NoobAI checkpoints, negative prompts, reference img2img and compatible LoRAs |
 | `generate_drafts` | Several quick drafts side by side; pick one and finalize it |
 | `generate_from_reference` | Use an image as a reference: variations, restyling (img2img), optionally plus a second image for pose/outlines |
@@ -44,6 +44,7 @@ Bottom: outpaint and background removal.</sub></p>
 | `upscale` | 2–4× upscale, optional detail-adding refine pass |
 | `remove_background` | Transparent PNG cut-outs |
 | `run_custom_workflow` | Run any workflow you export from ComfyUI |
+| `open_ui` | Opens ComfyClaude Studio, the local web UI (also `/comfyclaude:studio`) |
 | `list_capabilities`, `job_status`, `comfy_status`, `free_memory` | Utilities |
 
 ## How it works
@@ -66,6 +67,33 @@ Bottom: outpaint and background removal.</sub></p>
 - Images are saved to the output folder with a `.json` next to each (prompt, seed, settings, time), and can
   also be saved straight into your project: *"save it as assets/hero.webp"* (`save_to`).
 - If ComfyUI is already running (port 8188 or the Desktop app's 8000) it's reused; otherwise it's started.
+
+## Studio (web UI)
+
+Prefer clicking to chatting? **ComfyClaude Studio** is a local web UI for every tool above. It shares
+outputs, history and settings with the plugin, so images Claude made show up there and vice versa.
+
+- In Claude Code: `/comfyclaude:studio` (or ask Claude to "open the studio").
+- Standalone: `uv run python ui.py` → http://127.0.0.1:8199 (`--port`, `--no-browser`).
+
+What it does:
+
+- **Every tool**: create, drafts, SDXL/NoobAI, reference, ControlNet, custom workflows, inpaint,
+  outpaint, recolour, upscale and cut-out, each with its own focused form.
+- **Z-Image LoRAs** in Create, Drafts, Reference and Control (e.g. a style LoRA at 0.55).
+- **Batches** of up to 8 images (seed +1 each), **Finalize** a draft at full size in one click,
+  **Reuse** any result's settings, **recent prompts**, style preset previews.
+- **Mask editor** with brush, box, eraser, invert, select-all and undo; an **outpaint** canvas preview
+  with aspect presets; a **before/after slider** for edits.
+- **Custom workflows**: searchable list; every `{{placeholder}}` becomes a field, and required images
+  are checked before anything is sent.
+- **Live progress** from ComfyUI (sampling steps), cancel, retry, clear queue, desktop notifications
+  when a job finishes in the background. For live sampling previews, add `--preview-method auto`
+  to `comfy_args` in your config.
+- **History** of everything in the output folder: search, filter by tool, drag any image into an input slot.
+- Light/dark theme, copy image/path, download, show in folder. Press <kbd>?</kbd> for shortcuts.
+
+Studio only listens on 127.0.0.1 and rejects requests from other hosts and websites.
 
 ## Requirements
 

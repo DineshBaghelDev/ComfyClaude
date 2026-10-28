@@ -149,3 +149,6 @@ class ComfyClient:
 
     def free_memory(self):
         self._post_json("/free", {"unload_models": True, "free_memory": True})
+
+    def interrupt(self):
+        self._post_json("/interrupt", {})
